@@ -10,9 +10,9 @@ import {
 } from 'lucide-react';
 
 // Components
-import Sidebar from '../components/Sidebar';
-import TopHeader from '../components/TopHeader';
-import DashboardSkeleton from '../components/DashboardSkeleton';
+import Sidebar from '../dashboard/components/Sidebar';
+import TopHeader from '../dashboard/components/TopHeader';
+import DashboardSkeleton from '../dashboard/components/DashboardSkeleton';
 import TradingViewChart from '@/app/components/TradingViewChart';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 
@@ -122,10 +122,11 @@ export default function CopyTradingPage() {
       }
 
       // FETCH CONCURRENTLY FROM DATABASE
+    // FETCH CONCURRENTLY FROM DATABASE
       const [copyData, profile, dbCopies] = await Promise.all([
         getCopyTradingData(page, itemsPerPage),
         getUserProfile(),
-        fetchUserActiveCopies("user_id_placeholder") // Secure Database Call
+        fetchUserActiveCopies() // Removed "user_id_placeholder"
       ]);
 
       if (profile?.country) setUserCountry(profile.country);
