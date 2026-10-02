@@ -36,8 +36,15 @@ export default function AdminDashboardRoot() {
         getAllUsersAdmin(),
         getPendingTransactionsAdmin()
       ]);
-      setUsers(uData);
-      setPendingTxs(pData);
+      
+      // Sanitize user balances to prevent NaN errors in child components
+      const sanitizedUsers = (uData || []).map(user => ({
+        ...user,
+        balance: Number(user.balance) || 0 // Forces invalid/null balances to 0
+      }));
+
+      setUsers(sanitizedUsers);
+      setPendingTxs(pData || []);
     } catch (error) {
       console.error("Failed to load admin data:", error);
     } finally {
@@ -49,7 +56,7 @@ export default function AdminDashboardRoot() {
     loadData(); 
   }, []);
 
-  const totalSystemLiquidity = users.reduce((acc, curr) => acc + (curr.balance || 0), 0);
+  const totalSystemLiquidity = users.reduce((acc, curr) => acc + curr.balance, 0);
 
   if (isLoading) {
     return <LoadingSpinner label="Synchronizing Admin Desk & User Ledgers..." />;
