@@ -15,7 +15,7 @@ export interface MarketAsset {
 
 const DEFAULT_ASSETS: MarketAsset[] = [
   { symbol: "BTCUSDT", name: "Bitcoin / Tether", category: "Crypto", price: 0, change24h: 0, high24h: 0, low24h: 0, volume: "..." },
-  { symbol: "ETHUSDT", name: "Ethereum / Tether", category: "Crypto", price: 0, change24h: 0, high24h: 0, low24h: 0, volume: "..." },
+  { symbol: "ETHUSDT", name: "Ethereum / Tether", category: "Crypto", price: 0, change24h: 0, high24h:0, low24h: 0, volume: "..." },
   { symbol: "SOLUSDT", name: "Solana / Tether", category: "Crypto", price: 0, change24h: 0, high24h: 0, low24h: 0, volume: "..." },
   { symbol: "BNBUSDT", name: "Binance Coin", category: "Crypto", price: 0, change24h: 0, high24h: 0, low24h: 0, volume: "..." },
   { symbol: "AAPL", name: "Apple Inc.", category: "Stocks", price: 0, change24h: 0, high24h: 0, low24h: 0, volume: "..." },
@@ -73,34 +73,27 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     const apiKey = process.env.NEXT_PUBLIC_CRYPTO_API_KEY;
     if (!apiKey) return;
 
-    const ccSymbols = Object.values(CC_MAP).join(',');
-
-    // 1. Initial REST Fetch
-    fetch(`https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${ccSymbols}&tsyms=USD&api_key=${apiKey}`)
+    // 1. Initial REST Fetch via our highly reliable Backend Proxy
+    fetch(`/api/prices`, { headers: { 'Cache-Control': 'no-cache' } })
       .then(res => res.json())
-      .then(json => {
-        if (json.RAW) {
+      .then(data => {
+        if (data.success && data.prices) {
           setAssets(prev => prev.map(asset => {
-            if (CC_MAP[asset.symbol]) {
-              const apiSymbol = CC_MAP[asset.symbol];
-              const data = json.RAW[apiSymbol]?.USD;
-              if (data) {
-                return {
-                  ...asset,
-                  price: data.PRICE,
-                  change24h: data.CHANGEPCT24HOUR,
-                  high24h: data.HIGH24HOUR,
-                  low24h: data.LOW24HOUR
-                };
-              }
+            // Check if our proxy successfully fetched a price for this CryptoCompare asset
+            const proxyPrice = data.prices[CC_MAP[asset.symbol]] || data.prices[asset.symbol];
+            if (proxyPrice) {
+              return {
+                ...asset,
+                price: proxyPrice,
+              };
             }
             return asset;
           }));
         }
       })
-      .catch(err => console.error("CryptoCompare REST error:", err));
+      .catch(err => console.error("MarketContext Backend Proxy fetch error:", err));
 
-    // 2. Live WebSocket Stream
+    // 2. Live WebSocket Stream (WebSockets are rarely blocked by Adblockers, so we leave direct)
     const wsCrypto = new WebSocket(`wss://streamer.cryptocompare.com/v2?api_key=${apiKey}`);
 
     wsCrypto.onopen = () => {
@@ -145,29 +138,28 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     const apiKey = process.env.NEXT_PUBLIC_FINNHUB_API_KEY;
     if (!apiKey) return;
 
-    // Filter to only the 3 US Equities
     const stockAssets = DEFAULT_ASSETS.filter(a => FINNHUB_SYMBOL_MAP[a.symbol]);
 
-    // 1. Initial REST Fetch
-    Promise.all(
-      stockAssets.map(asset => {
-        const fhSymbol = FINNHUB_SYMBOL_MAP[asset.symbol];
-        return fetch(`https://finnhub.io/api/v1/quote?symbol=${fhSymbol}&token=${apiKey}`)
-          .then(res => res.json())
-          .then(data => ({ symbol: asset.symbol, data }))
-          .catch(() => null);
-      })
-    ).then(results => {
-      setAssets(prev => prev.map(asset => {
-        const match = results.find(r => r && r.symbol === asset.symbol);
-        if (match && match.data && match.data.c !== undefined && match.data.c !== 0) {
-          const d = match.data;
-          const changePercent = d.pc > 0 ? ((d.c - d.pc) / d.pc) * 100 : 0;
-          return { ...asset, price: d.c, change24h: changePercent, high24h: d.h, low24h: d.l };
+    // 1. Initial REST Fetch via our highly reliable Backend Proxy
+    fetch(`/api/prices`, { headers: { 'Cache-Control': 'no-cache' } })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.prices) {
+          setAssets(prev => prev.map(asset => {
+            if (FINNHUB_SYMBOL_MAP[asset.symbol]) {
+              const proxyPrice = data.prices[FINNHUB_SYMBOL_MAP[asset.symbol]];
+              if (proxyPrice) {
+                return {
+                  ...asset,
+                  price: proxyPrice
+                };
+              }
+            }
+            return asset;
+          }));
         }
-        return asset;
-      }));
-    });
+      })
+      .catch(err => console.error("MarketContext Stock Proxy fetch error:", err));
 
     // 2. Live WebSocket Stream
     const wsTradFi = new WebSocket(`wss://ws.finnhub.io?token=${apiKey}`);

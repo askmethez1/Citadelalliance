@@ -1,37 +1,31 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
+import { TRADING_ASSETS } from '@/app/config/assets';
 
 interface TradingViewChartProps {
   symbol: string;
 }
 
-// Map symbols to official TradingView exchange tickers
-function formatTradingViewSymbol(symbol: string): string {
-  const cleanSymbol = symbol.toUpperCase().replace('/', '').replace('USDT', 'USD');
+// Dynamically map symbols using your assets.ts configuration
+function formatTradingViewSymbol(rawSymbol: string): string {
+  const asset = TRADING_ASSETS.find(a => a.symbol === rawSymbol);
   
-  const symbolMap: Record<string, string> = {
-    'BTCUSD': 'BINANCE:BTCUSDT',
-    'ETHUSD': 'BINANCE:ETHUSDT',
-    'SOLUSD': 'BINANCE:SOLUSDT',
-    'BNBUSD': 'BINANCE:BNBUSDT',
-    'XRPUSD': 'BINANCE:XRPUSDT',
-    'DOGEUSD': 'BINANCE:DOGEUSDT',
-    'AVAXUSD': 'BINANCE:AVAXUSDT',
-    'SPY': 'AMEX:SPY',
-    'QQQ': 'NASDAQ:QQQ',
-    'VOO': 'AMEX:VOO',
-    'AAPL': 'NASDAQ:AAPL',
-    'NVDA': 'NASDAQ:NVDA',
-    'MSFT': 'NASDAQ:MSFT',
-    'AMZN': 'NASDAQ:AMZN',
-    'TSLA': 'NASDAQ:TSLA',
-    'META': 'NASDAQ:META',
-    'IBIT': 'NASDAQ:IBIT',
-    'ETHA': 'NASDAQ:ETHA',
-  };
-
-  return symbolMap[cleanSymbol] || `NASDAQ:${cleanSymbol}`;
+  if (asset?.type === 'crypto') {
+    // TradingView Crypto pairs usually trade against USDT on Binance (e.g., BTCUSD -> BINANCE:BTCUSDT)
+    return `BINANCE:${asset.symbol.replace('USD', 'USDT')}`;
+  } 
+  
+  if (asset?.type === 'stock') {
+    // Specific ETFs trade on AMEX, the rest of your list are on NASDAQ
+    if (['SPY', 'VOO'].includes(asset.symbol)) {
+      return `AMEX:${asset.symbol}`;
+    }
+    return `NASDAQ:${asset.symbol}`;
+  }
+  
+  // Safe Fallback
+  return `BINANCE:${rawSymbol.replace('USD', 'USDT')}`;
 }
 
 // Ensure the TradingView script is only loaded once per session
@@ -68,18 +62,26 @@ export default function TradingViewChart({ symbol }: TradingViewChartProps) {
 
     // If the script hasn't been loaded yet, append it to the document head
     if (!tvScriptLoadingPromise) {
-      tvScriptLoadingPromise = new Promise((resolve) => {
+      tvScriptLoadingPromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.id = 'tradingview-widget-loading-script';
         script.src = 'https://s3.tradingview.com/tv.js';
         script.type = 'text/javascript';
+        script.async = true;
         script.onload = () => resolve();
+        script.onerror = (err) => reject(err);
         document.head.appendChild(script);
       });
     }
 
     // Once the script is loaded, create the widget
-    tvScriptLoadingPromise.then(() => createWidget());
+    tvScriptLoadingPromise.then(() => {
+      if (containerRef.current) {
+        createWidget();
+      }
+    }).catch((err) => {
+      console.error("TradingView script blocked or failed to load:", err);
+    });
 
     // Cleanup function
     return () => {
@@ -90,9 +92,10 @@ export default function TradingViewChart({ symbol }: TradingViewChartProps) {
   }, [symbol, containerId]);
 
   return (
-    <div className="w-full h-full relative bg-[#0B0E14]">
-      {/* Absolute inset-0 forces the chart to fill the entire modal body */}
-      <div id={containerId} ref={containerRef} className="absolute inset-0" />
-    </div>
+    <div 
+      id={containerId} 
+      ref={containerRef} 
+      className="w-full h-full bg-[#0B0E14] overflow-hidden" 
+    />
   );
 }
