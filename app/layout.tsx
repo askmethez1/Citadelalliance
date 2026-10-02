@@ -81,11 +81,18 @@ export const metadata: Metadata = {
     },
   },
   
+  // Updated icons to match the new files in your public folder
   icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon-16x16.png',
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-96x96.png', sizes: '96x96', type: 'image/png' }
+    ],
     apple: '/apple-touch-icon.png',
   },
+  
+  // Link to your PWA/Android manifest file
+  manifest: '/site.webmanifest',
   
   alternates: {
     canonical: '/',
@@ -96,13 +103,13 @@ export const metadata: Metadata = {
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'FinancialProduct',
-  'name': 'Citadel Alliance',
-  'url': SITE_URL,
-  'description': 'Institutional trading and copy trading platform for cryptocurrency and global markets.',
-  'provider': {
+  name: 'Citadel Alliance',
+  url: SITE_URL,
+  description: 'Institutional trading and copy trading platform for cryptocurrency and global markets.',
+  provider: {
     '@type': 'Organization',
-    'name': 'Citadel Alliance',
-    'url': SITE_URL,
+    name: 'Citadel Alliance',
+    url: SITE_URL,
   },
 };
 
