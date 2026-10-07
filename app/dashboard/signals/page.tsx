@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import Sidebar from '../components/Sidebar';
 import TopHeader from '../components/TopHeader';
 import DashboardSkeleton from '../components/DashboardSkeleton';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 import { 
   Zap, TrendingUp, TrendingDown, Clock, ShieldCheck, 
-  Target, Play, Check, Filter, AlertCircle, ArrowUpRight, Loader2
+  Target, Play, Check, Filter, AlertCircle, ArrowUpRight, Loader2,
+  Lock, ArrowRight // Added for the lock screen
 } from 'lucide-react';
 
 import { getUserProfile } from '@/app/actions/profile';
@@ -42,6 +44,9 @@ export default function SignalsPage() {
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'CLOSED'>('ALL');
   const [executingId, setExecutingId] = useState<string | null>(null);
   
+  // ACCESS STATE: Determines if the user has paid for the Pro plan (Monthly or Yearly)
+  const [hasPaidAccess, setHasPaidAccess] = useState(false);
+  
   // Track user allocations per signal
   const [allocations, setAllocations] = useState<Record<string, string>>({});
 
@@ -66,6 +71,12 @@ export default function SignalsPage() {
         ]);
 
         if (profile?.country) setUserCountry(profile.country);
+        
+        // STRICT PAYMENT CHECK: Check if the user has the isPro flag from the database
+        if (profile?.isPro) {
+          setHasPaidAccess(true);
+        }
+
         if (activeSignals) setSignals(activeSignals);
       } catch (error) {
         console.error("Error loading signals:", error);
@@ -144,6 +155,44 @@ export default function SignalsPage() {
     return <DashboardSkeleton activeTab={sidebarTab} location={userCountry} />;
   }
 
+  // =========================================================================
+  // LOCK SCREEN: Displayed if the user has NOT paid for the Pro plan
+  // =========================================================================
+  if (!hasPaidAccess) {
+    return (
+      <div className="min-h-screen bg-[#0B0E14] text-gray-300 font-sans flex selection:bg-blue-500/30 w-full relative">
+        <Sidebar activeTab={sidebarTab} setActiveTab={setSidebarTab} location={userCountry} />
+        <main className="flex-1 flex flex-col min-h-screen relative min-w-0 overflow-x-hidden">
+          <TopHeader />
+          <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full flex flex-col items-center justify-center">
+            <div className="bg-[#151924] border border-white/5 rounded-3xl p-8 md:p-12 max-w-2xl w-full text-center shadow-2xl relative overflow-hidden">
+              <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="relative z-10">
+                <div className="w-20 h-20 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Lock size={36} className="text-blue-500" />
+                </div>
+                <h2 className="text-3xl font-extrabold text-white mb-4">Pro Terminal Required</h2>
+                <p className="text-gray-400 text-lg mb-8 leading-relaxed">
+                  The Premium Signals Desk is an exclusive feature for Pro users. To unlock institutional market setups and direct broadcasts, you must upgrade your account.
+                </p>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                  <Link href="/dashboard/upgrade" className="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center gap-2">
+                    Upgrade to Pro <ArrowRight size={18} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // NORMAL SIGNALS DESK: Displayed only if the user HAS paid
+  // =========================================================================
   return (
     <div className="min-h-screen bg-[#0B0E14] text-gray-300 font-sans flex selection:bg-blue-500/30 w-full relative">
       <Sidebar activeTab={sidebarTab} setActiveTab={setSidebarTab} location={userCountry} />

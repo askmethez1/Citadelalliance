@@ -8,12 +8,14 @@ import NotificationModal, { ModalType } from '@/app/components/ui/NotificationMo
 import Pagination from '@/app/components/ui/Pagination'; // Imported Pagination
 import { 
   Wallet, ArrowDownLeft, ArrowUpRight, Copy, Check, 
-  ShieldCheck, AlertCircle, History, Loader2 
+  ShieldCheck, AlertCircle, History, Loader2, Gift 
 } from 'lucide-react';
 
 import { 
   getTransactionHistory, 
   createWithdrawalRequest, 
+  getWalletOverview,        // <-- Added
+  transferBonusToReal,      // <-- Added
   TransactionRecord 
 } from '@/app/actions/wallet';
 import { getUserProfile } from '@/app/actions/profile';
@@ -39,6 +41,8 @@ export default function WalletPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [userCountry, setUserCountry] = useState<string>('Nigeria');
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+  const [bonusBalance, setBonusBalance] = useState<number>(0); // <-- Added Bonus State
+  const [isTransferringBonus, setIsTransferringBonus] = useState(false); // <-- Transfer State
 
   // Database System Addresses
   const [sysAddresses, setSysAddresses] = useState({ BTC: '', ETH: '', USDT_TRC20: '' });
@@ -69,10 +73,11 @@ export default function WalletPage() {
 
   const loadData = async () => {
     setIsLoading(true);
-    const [profile, txs, addresses] = await Promise.all([
+    const [profile, txs, addresses, walletData] = await Promise.all([
       getUserProfile(),
       getTransactionHistory(),
-      getSystemAddresses()
+      getSystemAddresses(),
+      getWalletOverview() // <-- Fetch Bonus Data
     ]);
 
     if (profile?.country) {
@@ -80,6 +85,9 @@ export default function WalletPage() {
     }
     if (addresses) {
       setSysAddresses(addresses);
+    }
+    if (walletData) {
+      setBonusBalance(walletData.bonusBalance);
     }
     
     setTransactions(txs);
@@ -92,6 +100,26 @@ export default function WalletPage() {
 
   const showAlert = (message: string, type: ModalType = 'info', title?: string) => {
     setModalConfig({ isOpen: true, message, type, title });
+  };
+
+  // --- BONUS TRANSFER HANDLER ---
+  const handleTransferBonus = async () => {
+    if (bonusBalance < 200) {
+      showAlert(`Bonus must be traded to reach at least $200.00 to unlock withdrawal. Current bonus: $${bonusBalance.toFixed(2)}.`, "warning", "Unlock Condition Not Met");
+      return;
+    }
+
+    setIsTransferringBonus(true);
+    const res = await transferBonusToReal();
+    setIsTransferringBonus(false);
+
+    if (res.success) {
+      showAlert(res.message, "success", "Bonus Unlocked!");
+      loadData(); // Refresh bonus state and transactions
+      refreshWallet(); // Refresh global available balance
+    } else {
+      showAlert(res.message, "error", "Transfer Failed");
+    }
   };
 
   // Dynamically build the deposit methods based on the admin's database configuration
@@ -145,7 +173,7 @@ export default function WalletPage() {
     }
 
     if (amountNum > balance) {
-      showAlert("Insufficient available account balance. Note: Locked margin cannot be withdrawn.", "error", "Insufficient Funds");
+      showAlert("Insufficient available account balance. Note: Locked margin or bonus funds cannot be withdrawn.", "error", "Insufficient Funds");
       return;
     }
 
@@ -225,30 +253,57 @@ export default function WalletPage() {
               </div>
             </div>
 
-            {/* SYNCHRONIZED BALANCE CARDS */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* SYNCHRONIZED BALANCE CARDS - Now 4 Columns to include Bonus */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Total Net Equity */}
               <div className="bg-[#151924] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Total Net Equity</div>
-                <div className="text-3xl font-mono font-extrabold text-white mb-2">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Total Net Equity</div>
+                <div className="text-2xl font-mono font-extrabold text-white mb-2">
                   ${liveEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                <div className="text-xs text-gray-400">Balance + Open Margin + Live PnL</div>
+                <div className="text-[10px] text-gray-400">Balance + Open Margin + Live PnL</div>
               </div>
 
+              {/* Available Balance */}
               <div className="bg-[#151924] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Available Balance</div>
-                <div className="text-3xl font-mono font-extrabold text-blue-400 mb-2">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Available Balance</div>
+                <div className="text-2xl font-mono font-extrabold text-blue-400 mb-2">
                   ${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                <div className="text-xs text-gray-400">Ready for withdrawal or trading</div>
+                <div className="text-[10px] text-gray-400">Ready for withdrawal or trading</div>
               </div>
 
+              {/* Trading Bonus Card (NEW) */}
+              <div className="bg-[#151924] border border-purple-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-2xl group-hover:bg-purple-500/10 transition-colors"></div>
+                <div className="text-[11px] font-bold text-purple-500/70 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Gift size={12} className="text-purple-400" /> Trading Bonus
+                </div>
+                <div className="text-2xl font-mono font-extrabold text-purple-400 mb-2">
+                  ${bonusBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="flex justify-between items-center mt-1 relative z-10">
+                  <span className="text-[10px] text-gray-400">Trade to $200 to withdraw</span>
+                  {bonusBalance > 0 && (
+                    <button 
+                      onClick={handleTransferBonus}
+                      disabled={isTransferringBonus}
+                      className="bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 text-purple-300 text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {isTransferringBonus ? <Loader2 size={10} className="animate-spin" /> : null}
+                      Unlock
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* In Open Positions */}
               <div className="bg-[#151924] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">In Open Positions</div>
-                <div className="text-3xl font-mono font-extrabold text-gray-400 mb-2">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">In Open Positions</div>
+                <div className="text-2xl font-mono font-extrabold text-gray-400 mb-2">
                   ${lockedMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                <div className="text-xs text-gray-500">Margin utilization: {marginUtilized.toFixed(1)}%</div>
+                <div className="text-[10px] text-gray-500">Margin utilization: {marginUtilized.toFixed(1)}%</div>
               </div>
             </div>
 
@@ -307,7 +362,6 @@ export default function WalletPage() {
                       </div>
                     </div>
 
-                    {/* QR Code removed, full-width address section */}
                     <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-6">
                       <div className="space-y-4">
                         <div>
@@ -484,7 +538,11 @@ export default function WalletPage() {
                               <p className="font-bold text-white">{tx.type}</p>
                               <p className="text-[10px] text-gray-500">{tx.asset}</p>
                             </td>
-                            <td className={`p-4 font-mono font-bold text-xs ${tx.type === 'Deposit' ? 'text-green-400' : 'text-white'}`}>
+                            <td className={`p-4 font-mono font-bold text-xs ${
+                              tx.type.includes('Deposit') || tx.type.includes('Bonus') || tx.type.includes('Transfer') 
+                                ? 'text-green-400' 
+                                : 'text-white'
+                            }`}>
                               {tx.amount}
                             </td>
                             <td className="p-4 text-xs font-mono text-gray-400">{tx.created_at}</td>

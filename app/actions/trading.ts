@@ -21,9 +21,13 @@ export async function getTradingData() {
   if (!userId) return null;
 
   try {
-    const userRes = await pool.query(`SELECT balance FROM users WHERE id = $1`, [userId]);
+    // Fetch both balances
+    const userRes = await pool.query(`SELECT balance, bonus_balance FROM users WHERE id = $1`, [userId]);
     const rawBalance = parseFloat(userRes.rows[0]?.balance || "0");
+    const rawBonusBalance = parseFloat(userRes.rows[0]?.bonus_balance || "0");
+    
     const balance = Math.max(0, rawBalance); // Negative Balance Protection Clamp
+    const bonusBalance = Math.max(0, rawBonusBalance);
 
     const tradesRes = await pool.query(
       `SELECT * FROM trades WHERE user_id = $1 ORDER BY open_time DESC`, 
@@ -32,6 +36,7 @@ export async function getTradingData() {
     
     return {
       balance,
+      bonusBalance,
       trades: tradesRes.rows.map(r => ({
         id: r.ticket,
         symbol: r.symbol,
@@ -47,6 +52,7 @@ export async function getTradingData() {
         fee: parseFloat(r.fee) || 0,
         pnl: r.pnl ? parseFloat(r.pnl) : 0,
         status: r.status,
+        walletType: r.wallet_type || 'REAL', // Map the wallet type
         openTime: new Date(r.open_time).toLocaleString(),
         closeTime: r.close_time ? new Date(r.close_time).toLocaleString() : null
       }))
@@ -68,11 +74,13 @@ export async function openTrade(trade: {
   sl: number; 
   tp: number;
   fee: number;
+  walletType?: 'REAL' | 'BONUS'; // Added walletType
 }) {
   const userId = await getCurrentUserId();
   if (!userId) return { success: false };
 
   const ticket = Math.floor(Math.random() * 100000000).toString();
+  const activeWalletType = trade.walletType || 'REAL'; // Default to real if undefined
 
   // CALCULATE EXACT MARGIN REQUIRED FOR THE TRADE
   const margin = (trade.openPrice * trade.volume) / trade.leverage;
@@ -81,30 +89,45 @@ export async function openTrade(trade: {
   try {
     await pool.query('BEGIN');
 
-    // 1. Lock the user row and verify they have enough balance
-    const userRes = await pool.query(`SELECT balance FROM users WHERE id = $1 FOR UPDATE`, [userId]);
-    const currentBalance = parseFloat(userRes.rows[0].balance || "0");
+    // 1. Lock the user row and verify they have enough balance in the chosen wallet
+    const userRes = await pool.query(`SELECT balance, bonus_balance FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+    const currentRealBalance = parseFloat(userRes.rows[0].balance || "0");
+    const currentBonusBalance = parseFloat(userRes.rows[0].bonus_balance || "0");
 
-    if (currentBalance < totalDeduction) {
-      await pool.query('ROLLBACK');
-      console.error("Insufficient balance to open trade. Need:", totalDeduction, "Have:", currentBalance);
-      return { success: false, error: 'Insufficient balance' };
+    if (activeWalletType === 'BONUS') {
+      if (currentBonusBalance < totalDeduction) {
+        await pool.query('ROLLBACK');
+        console.error("Insufficient bonus balance to open trade. Need:", totalDeduction, "Have:", currentBonusBalance);
+        return { success: false, error: 'Insufficient bonus balance' };
+      }
+      
+      // 2a. Deduct Margin + Fee from Bonus Balance
+      await pool.query(
+        `UPDATE users SET bonus_balance = bonus_balance - $1 WHERE id = $2`,
+        [totalDeduction, userId]
+      );
+    } else {
+      if (currentRealBalance < totalDeduction) {
+        await pool.query('ROLLBACK');
+        console.error("Insufficient real balance to open trade. Need:", totalDeduction, "Have:", currentRealBalance);
+        return { success: false, error: 'Insufficient balance' };
+      }
+
+      // 2b. Deduct Margin + Fee from Real Balance
+      await pool.query(
+        `UPDATE users SET balance = balance - $1 WHERE id = $2`,
+        [totalDeduction, userId]
+      );
     }
 
-    // 2. Deduct Margin + Fee from Available Balance
+    // 3. Insert the trade ticket WITH wallet_type
     await pool.query(
-      `UPDATE users SET balance = balance - $1 WHERE id = $2`,
-      [totalDeduction, userId]
-    );
-
-    // 3. Insert the trade ticket
-    await pool.query(
-      `INSERT INTO trades (user_id, ticket, symbol, trade_type, order_type, margin_mode, leverage, volume, open_price, sl, tp, fee, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'OPEN')`,
+      `INSERT INTO trades (user_id, ticket, symbol, trade_type, order_type, margin_mode, leverage, volume, open_price, sl, tp, fee, status, wallet_type) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'OPEN', $13)`,
       [
         userId, ticket, trade.symbol, trade.type, trade.orderType, 
         trade.marginMode, trade.leverage, trade.volume, trade.openPrice, 
-        trade.sl, trade.tp, trade.fee
+        trade.sl, trade.tp, trade.fee, activeWalletType
       ]
     );
 
@@ -140,9 +163,9 @@ export async function closeTrade(ticket: string, closePrice: number, pnl: number
   try {
     await pool.query('BEGIN');
 
-    // 1. Fetch the trade to dynamically calculate the margin to return
+    // 1. Fetch the trade to dynamically calculate the margin to return, tracking wallet_type
     const tradeRes = await pool.query(
-      `SELECT open_price, volume, leverage, status FROM trades WHERE ticket = $1 AND user_id = $2 FOR UPDATE`,
+      `SELECT open_price, volume, leverage, status, wallet_type FROM trades WHERE ticket = $1 AND user_id = $2 FOR UPDATE`,
       [ticket, userId]
     );
 
@@ -161,24 +184,33 @@ export async function closeTrade(ticket: string, closePrice: number, pnl: number
       [closePrice, pnl, ticket, userId]
     );
 
-    // 3. Return Margin + Realized PnL to the User's Balance
-    await pool.query(
-      `UPDATE users SET balance = GREATEST(0, balance + $1) WHERE id = $2`,
-      [totalReturn, userId]
-    );
+    // 3. Return Margin + Realized PnL to the Correct Wallet
+    if (t.wallet_type === 'BONUS') {
+      await pool.query(
+        `UPDATE users SET bonus_balance = GREATEST(0, bonus_balance + $1) WHERE id = $2`,
+        [totalReturn, userId]
+      );
+    } else {
+      await pool.query(
+        `UPDATE users SET balance = GREATEST(0, balance + $1) WHERE id = $2`,
+        [totalReturn, userId]
+      );
+    }
 
     // 4. Log the transaction
     await pool.query(
       `INSERT INTO activity_logs (user_id, action, metadata) VALUES ($1, 'TRADE_CLOSED', $2)`,
-      [userId, `Closed ${ticket} with PnL: $${pnl.toFixed(2)}`]
+      [userId, `Closed ${t.wallet_type} trade ${ticket} with PnL: $${pnl.toFixed(2)}`]
     );
 
     await pool.query('COMMIT');
     
-    // Return fresh balance to the UI
-    const updated = await pool.query(`SELECT balance FROM users WHERE id = $1`, [userId]);
+    // Return fresh balances to the UI
+    const updated = await pool.query(`SELECT balance, bonus_balance FROM users WHERE id = $1`, [userId]);
     const finalBalance = Math.max(0, parseFloat(updated.rows[0].balance || "0"));
-    return { success: true, newBalance: finalBalance };
+    const finalBonusBalance = Math.max(0, parseFloat(updated.rows[0].bonus_balance || "0"));
+    
+    return { success: true, newBalance: finalBalance, newBonusBalance: finalBonusBalance };
   } catch (error) {
     await pool.query('ROLLBACK');
     console.error("Error closing trade:", error);

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings, Maximize2, ChevronDown, Edit2, Check, X as CancelIcon, Star, Loader2, Minimize2, AlertTriangle } from 'lucide-react';
+import { Settings, Maximize2, ChevronDown, Edit2, Check, X as CancelIcon, Star, Loader2, Minimize2, AlertTriangle, Gift, Users } from 'lucide-react';
 import { getTradingData, openTrade, closeTrade, updateTradeSLTP } from '@/app/actions/trading';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 import TradingViewChart from '@/app/components/TradingViewChart';
@@ -9,6 +9,9 @@ import OrderPanel from './OrderPanel';
 import { TRADING_ASSETS, TradingAsset } from '@/app/config/assets';
 import { calculatePnL, calculateLiquidationPrice, validateOrderRisk, evaluateTradeClosure } from '@/app/utils/tradingEngine';
 import { usePricingEngine } from '@/app/hooks/usePricingEngine';
+
+// Assume you have access to the global wallet hook to get the raw bonus balance
+import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 
 interface Position {
   id: string;
@@ -25,6 +28,7 @@ interface Position {
   status: 'OPEN' | 'CLOSED';
   openTime: string;
   closeTime?: string;
+  walletType?: 'REAL' | 'BONUS';
 }
 
 export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats: any) => void }) {
@@ -33,11 +37,19 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Diagnostic Pricing Hook
+  // WALLET TOGGLE STATE
+  const [walletType, setWalletType] = useState<'REAL' | 'BONUS'>('REAL');
+
+  // Hook into pricing and global wallet engine
   const { getLivePrice, cryptoError, stockError } = usePricingEngine();
+  const walletEngine = useWalletEngine() as any;
+  // Fallback to 100 if bonus hasn't been pulled from db correctly yet in this context
+  const rawBonusBalance = walletEngine?.bonusBalance !== undefined ? walletEngine.bonusBalance : 100;
 
   const [balance, setBalance] = useState<number>(0);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [aiMeta, setAiMeta] = useState<Record<string, any>>({});
+  
   const [activeTab, setActiveTab] = useState<'positions' | 'history'>('positions');
   const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
@@ -87,10 +99,16 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
         setPositions(data.trades.map((t: any) => ({
           ...t, 
           currentPrice: t.status === 'OPEN' ? (getLivePrice(t.symbol) || t.openPrice) : t.closePrice, 
-          pnl: t.status === 'OPEN' ? 0 : t.pnl 
+          pnl: t.status === 'OPEN' ? 0 : t.pnl,
+          walletType: t.walletType || 'REAL'
         })));
       }
+      
+      // Fetch copy trading metadata to identify AI trades
+      const storedMeta = JSON.parse(localStorage.getItem('ai_copy_meta') || '{}');
+      setAiMeta(storedMeta);
     };
+    
     initData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -116,8 +134,11 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
       const activePrice = getLivePrice(pos.symbol) || pos.openPrice;
       const pnl = calculatePnL(pos.type, pos.openPrice, activePrice, pos.volume);
 
-      floatingPnL += pnl;
-      marginLocked += (pos.openPrice * pos.volume) / pos.leverage;
+      // Only count real-fund margin utilization for standard equity calculation
+      if (pos.walletType !== 'BONUS') {
+        floatingPnL += pnl;
+        marginLocked += (pos.openPrice * pos.volume) / pos.leverage;
+      }
 
       return { ...pos, currentPrice: activePrice, pnl };
     });
@@ -137,6 +158,9 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
     };
   }, [positions, getLivePrice, balance]);
 
+  // Determine active margin based on toggle switch
+  const activeMarginToTrade = walletType === 'BONUS' ? rawBonusBalance : freeMargin;
+
   useEffect(() => {
     if (onLiveStats) {
       onLiveStats((prev: any) => ({ ...prev, balance, pnl: totalFloatingPnL, marginUtilized }));
@@ -152,7 +176,7 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
       if (!tickPrice || tickPrice <= 0) return;
 
       const liqPrice = calculateLiquidationPrice(pos.type, pos.marginMode, pos.openPrice, pos.volume, pos.leverage, freeMargin);
-      const { shouldClose, reason } = evaluateTradeClosure(pos.type, tickPrice, pos.openPrice, pos.tp, pos.sl, liqPrice);
+      const { shouldClose, reason } = evaluateTradeClosure(pos.type, tickPrice, pos.openPrice, pos.tp,pos.sl, liqPrice);
 
       if (shouldClose) handleClosePosition(pos, reason);
     });
@@ -162,12 +186,17 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
     const requiredMargin = (order.limitPrice * order.size) / order.leverage;
     const totalCost = requiredMargin + order.fee;
 
-    if (totalCost > freeMargin) {
-      showAlert(`Insufficient funds. This trade requires $${totalCost.toFixed(2)} to open, but your available margin is only $${freeMargin.toFixed(2)}.`, "error", "Margin Error");
+    // Check margin against selected wallet
+    if (totalCost > activeMarginToTrade) {
+      showAlert(
+        `Insufficient ${walletType.toLowerCase()} funds. This trade requires $${totalCost.toFixed(2)}, but your available ${walletType.toLowerCase()} margin is only $${activeMarginToTrade.toFixed(2)}.`, 
+        "error", 
+        "Margin Error"
+      );
       return;
     }
 
-    const liqPrice = calculateLiquidationPrice(order.type, order.marginMode, order.limitPrice, order.size, order.leverage, freeMargin);
+    const liqPrice = calculateLiquidationPrice(order.type, order.marginMode, order.limitPrice, order.size, order.leverage, activeMarginToTrade);
     const validation = validateOrderRisk(order.type, order.limitPrice, order.tp, order.sl, liqPrice);
 
     if (!validation.isValid) {
@@ -187,13 +216,18 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
       openPrice: order.limitPrice,
       sl: order.sl,
       tp: order.tp,
-      fee: order.fee
+      fee: order.fee,
+      walletType // We pass this to track if it's a bonus trade
     };
 
+    // Assuming your backend `openTrade` can process the new `walletType` logic eventually
     const res = await openTrade(payload);
 
     if (res.success && res.ticket) {
-      setBalance(prev => Math.max(0, prev - order.fee)); 
+      if (walletType === 'REAL') {
+        setBalance(prev => Math.max(0, prev - order.fee)); 
+      }
+      
       const newPos: Position = { 
         id: res.ticket, 
         symbol: selectedAsset.symbol, 
@@ -204,7 +238,7 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
         ...payload 
       };
       setPositions(prev => [newPos, ...prev]);
-      showAlert(`${order.orderType} ${order.type} placed.`, "success", "Order Executed");
+      showAlert(`${order.orderType} ${order.type} placed via ${walletType} account.`, "success", "Order Executed");
     } else {
       showAlert("Execution failed. Engine rejected order.", "error", "Execution Error");
     }
@@ -217,7 +251,9 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
 
     const res = await closeTrade(pos.id, closePrice, pos.pnl);
     if (res.success && res.newBalance !== undefined) {
-      setBalance(Math.max(0, res.newBalance)); 
+      if (pos.walletType !== 'BONUS') {
+        setBalance(Math.max(0, res.newBalance)); 
+      }
       setPositions(prev => prev.map(p => p.id === pos.id ? { ...p, status: 'CLOSED', closePrice, closeTime: new Date().toLocaleString() } : p));
       showAlert(customReason || `Position Closed at Market. Realized PnL: $${pos.pnl.toFixed(2)}`, "success", "Trade Settled");
     }
@@ -320,10 +356,12 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
         <OrderPanel 
           selectedAsset={selectedAsset} 
           currentPrice={livePrice || 0} 
-          freeMargin={freeMargin} 
+          freeMargin={activeMarginToTrade} 
+          walletType={walletType}
+          setWalletType={setWalletType}
           isProcessing={isProcessing} 
           onExecuteOrder={handleExecuteOrder} 
-          {...({ showAlert } as any)} // Bypass TS Error for Vercel Build
+          {...({ showAlert } as any)} 
         />
       </div>
 
@@ -367,10 +405,20 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
                 return (
                   <tr key={pos.id} className={`border-b border-white/5 transition-colors group ${isClosing ? 'opacity-30 bg-red-500/5' : 'hover:bg-white/[0.02]'}`}>
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-1 h-4 rounded-full ${pos.type === 'BUY' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                        <span className="font-bold text-white font-sans">{pos.symbol}</span>
-                        <span className={`text-[10px] px-1.5 rounded ${pos.type === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>{pos.leverage}x</span>
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-1 h-4 rounded-full ${pos.type === 'BUY' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                          <span className="font-bold text-white font-sans flex items-center gap-1">
+                            {pos.symbol}
+                            {pos.walletType === 'BONUS' && <Gift size={10} className="text-purple-400 ml-1" />}
+                          </span>
+                          <span className={`text-[10px] px-1.5 rounded ${pos.type === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>{pos.leverage}x</span>
+                        </div>
+                        {aiMeta[pos.id] && (
+                          <div className="flex items-center gap-1 text-[9px] text-blue-400 font-bold bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded ml-3 w-fit">
+                            <Users size={10} /> Copying: {aiMeta[pos.id].traderName}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-gray-400 font-sans uppercase text-[10px] font-bold">{pos.marginMode || 'CROSS'}</td>
@@ -413,14 +461,26 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
 
               {activeTab === 'history' && historyTrades.map((pos) => (
                 <tr key={pos.id} className="border-b border-white/5 opacity-70">
-                  <td className="py-3 px-4 font-bold text-gray-400">{pos.symbol}</td>
-                  <td className="py-3 px-4 uppercase text-[10px] text-gray-500">{pos.marginMode || 'CROSS'}</td>
+                  <td className="py-3 px-4">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="font-bold text-gray-400 flex items-center gap-1 font-sans">
+                        {pos.symbol}
+                        {pos.walletType === 'BONUS' && <Gift size={10} className="text-purple-400" />}
+                      </div>
+                      {aiMeta[pos.id] && (
+                        <div className="flex items-center gap-1 text-[9px] text-blue-400/70 font-bold bg-blue-500/5 border border-blue-500/10 px-1.5 py-0.5 rounded w-fit">
+                          <Users size={10} /> Copying: {aiMeta[pos.id].traderName}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 uppercase text-[10px] text-gray-500 font-sans font-bold">{pos.marginMode || 'CROSS'}</td>
                   <td className={`py-3 px-4 ${pos.type === 'BUY' ? 'text-green-500/70' : 'text-red-500/70'}`}>{pos.volume.toFixed(3)}</td>
                   <td className="py-3 px-4 text-gray-500">${pos.openPrice.toFixed(2)}</td>
                   <td className="py-3 px-4 text-gray-500">${pos.currentPrice.toFixed(2)}</td>
                   <td className="py-3 px-4 text-gray-600">--</td>
-                  <td className="py-3 px-4 text-gray-600">Closed</td>
-                  <td className={`py-3 px-4 text-right ${pos.pnl >= 0 ? 'text-green-500/70' : 'text-red-500/70'}`}>{pos.pnl >= 0 ? '+' : ''}${pos.pnl.toFixed(2)} USDT</td>
+                  <td className="py-3 px-4 text-gray-600 font-sans font-medium text-xs">Closed</td>
+                  <td className={`py-3 px-4 text-right font-bold ${pos.pnl >= 0 ? 'text-green-500/70' : 'text-red-500/70'}`}>{pos.pnl >= 0 ? '+' : ''}${pos.pnl.toFixed(2)} USDT</td>
                   <td className="py-3 px-4 text-center text-gray-600 text-[10px]">{pos.closeTime}</td>
                 </tr>
               ))}
@@ -429,7 +489,7 @@ export default function TradingTerminal({ onLiveStats }: { onLiveStats?: (stats:
         </div>
       </div>
 
-      <NotificationModal isOpen={modalConfig.isOpen} onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))} title={modalConfig.title} message={modalConfig.message} type={modalConfig.type} />
+      <NotificationModal isOpen={modalConfig.isOpen} onClose={() => setModalConfig(prev => ({ ...prev,isOpen: false }))} title={modalConfig.title} message={modalConfig.message} type={modalConfig.type} />
     </div>
   );
 }

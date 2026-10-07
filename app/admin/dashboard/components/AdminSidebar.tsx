@@ -14,7 +14,8 @@ import {
   ShieldAlert,
   LogOut,
   MapPin,
-  MessageSquare
+  MessageSquare,
+  Crown // <-- Added the Crown icon for the Subscriptions tab
 } from 'lucide-react';
 import { logoutUser } from '@/app/actions/auth';
 
@@ -30,6 +31,7 @@ export default function AdminSidebar({ location }: AdminSidebarProps) {
   const NAV_ITEMS = [
     { id: 'users', href: '/admin/dashboard', label: 'User Accounts & Ledger', icon: Users },
     { id: 'deposits', href: '/admin/dashboard/deposits', label: 'Pending Deposits', icon: CircleDollarSign },
+    { id: 'subscriptions', href: '/admin/dashboard/subscriptions', label: 'Pro Subscriptions', icon: Crown }, // <-- Added the Subscriptions tab
     { id: 'chat', href: '/admin/dashboard/chat', label: 'Live Support Desk', icon: MessageSquare },
     { id: 'traders', href: '/admin/dashboard/traders', label: 'Add Master Trader', icon: UserPlus },
     { id: 'signals', href: '/admin/dashboard/signals', label: 'Broadcast Signal', icon: Zap },

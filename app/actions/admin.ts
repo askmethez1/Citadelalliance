@@ -11,22 +11,78 @@ const pool = new Pool({
 
 export async function getAllUsersAdmin() {
   try {
-    const { rows } = await pool.query(
-      `SELECT id, email, first_name, last_name, balance, country, role, is_banned, created_at 
+    // 1. Fetch all users (including Pro tracking columns if they exist, mapped safely)
+    const { rows: users } = await pool.query(
+      `SELECT id, email, first_name, last_name, balance, country, role, is_banned, created_at, 
+              (SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='is_pro') as has_pro
        FROM users ORDER BY id ASC`
     );
-    // Properly map to camelCase for the frontend UI
-    return rows.map(r => ({
-      id: r.id,
-      email: r.email,
-      firstName: r.first_name,
-      lastName: r.last_name,
-      balance: parseFloat(r.balance || '0.00'),
-      country: r.country,
-      role: r.role,
-      isBanned: r.is_banned || false,
-      created_at: new Date(r.created_at).toLocaleString()
-    }));
+
+    // Dynamic query for Pro columns to avoid crashing if columns aren't created yet
+    const hasProColumns = users.length > 0 && users[0].has_pro !== null;
+    let fullUsers = users;
+    
+    if (hasProColumns) {
+       const { rows } = await pool.query(`SELECT id, is_pro, pro_plan_type, pro_expiry FROM users`);
+       fullUsers = users.map(u => {
+         const match = rows.find(r => r.id === u.id);
+         return { ...u, is_pro: match?.is_pro, pro_plan_type: match?.pro_plan_type, pro_expiry: match?.pro_expiry };
+       });
+    }
+
+    // 2. Fetch all open trades safely
+    let openTrades: any[] = [];
+    try {
+      const { rows: trades } = await pool.query(
+        `SELECT * FROM trades WHERE close_price IS NULL OR UPPER(status) IN ('OPEN', 'ACTIVE')`
+      );
+      openTrades = trades;
+    } catch (e) {
+      console.warn("Warning: Could not fetch open trades:", e);
+    }
+
+    // 3. Map users and attach their active trades 
+    return fullUsers.map((r: any) => {
+      const userIdStr = String(r.id);
+
+      const userTrades = openTrades
+        .filter(t => String(t.user_id) === userIdStr)
+        .map(t => {
+          const vol = Number(t.volume) || 0;
+          const op = Number(t.open_price) || 0;
+          const lev = Number(t.leverage) || 10;
+          
+          return {
+            id: String(t.id),
+            symbol: t.symbol,
+            type: t.trade_type || t.order_type || 'BUY',
+            leverage: lev,
+            openPrice: op,
+            volume: vol,
+            margin: (vol * op) / lev, 
+            sl: t.sl ? Number(t.sl) : undefined,
+            tp: t.tp ? Number(t.tp) : undefined,
+            createdAt: t.open_time
+          };
+        });
+
+      return {
+        id: r.id,
+        email: r.email,
+        firstName: r.first_name,
+        lastName: r.last_name,
+        balance: Number(r.balance) || 0,
+        tradingBalance: 0, 
+        country: r.country,
+        role: r.role,
+        isBanned: r.is_banned || false,
+        isPro: r.is_pro || false,
+        proPlanType: r.pro_plan_type || null,
+        proExpiry: r.pro_expiry ? new Date(r.pro_expiry).toLocaleDateString() : null,
+        created_at: new Date(r.created_at).toLocaleString(),
+        openTrades: userTrades 
+      };
+    });
   } catch (error) {
     console.error('Error fetching admin users:', error);
     return [];
@@ -50,7 +106,7 @@ export async function creditUserDepositAdmin(userId: number, amount: number, not
 
   try {
     await pool.query(
-      'UPDATE users SET balance = balance + $1 WHERE id = $2', 
+      'UPDATE users SET balance = COALESCE(balance, 0) + $1 WHERE id = $2', 
       [amount, userId]
     );
 
@@ -103,7 +159,6 @@ export async function getPendingTransactionsAdmin() {
        WHERE t.status = 'Pending'
        ORDER BY t.created_at DESC`
     );
-    // Extract and map snake_case to camelCase to prevent UI length errors
     return rows.map(r => ({
       id: r.id,
       userId: r.user_id,
@@ -160,27 +215,61 @@ export async function rejectTransactionAdmin(txId: number) {
   }
 }
 
+// --- PRO SUBSCRIPTIONS MANAGEMENT ---
+
+export async function getProSubscriptionsAdmin() {
+  try {
+    // Check if the is_pro column exists before querying to prevent crashes
+    const checkCol = await pool.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='is_pro'`
+    );
+
+    if (checkCol.rows.length === 0) {
+      console.warn("is_pro column does not exist yet. Returning empty subscriptions list.");
+      return [];
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id, email, first_name, last_name, pro_plan_type, pro_expiry, created_at 
+       FROM users 
+       WHERE is_pro = true 
+       ORDER BY pro_expiry DESC NULLS LAST`
+    );
+
+    return rows.map((r: any) => {
+      const isAnnual = r.pro_plan_type === 'annual' || r.pro_plan_type === 'Annual';
+      const expiryDate = r.pro_expiry ? new Date(r.pro_expiry) : new Date();
+      const isActive = expiryDate > new Date();
+
+      return {
+        id: `SUB-${r.id}`,
+        userId: String(r.id),
+        name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || 'Unknown User',
+        email: r.email,
+        planType: isAnnual ? 'Annual' : 'Monthly',
+        amount: isAnnual ? 960 : 100,
+        startDate: new Date(r.created_at).toISOString().split('T')[0],
+        expiryDate: expiryDate.toISOString().split('T')[0],
+        status: isActive ? 'Active' : 'Expired'
+      };
+    });
+  } catch (error) {
+    console.error("Failed to fetch subscriptions:", error);
+    return [];
+  }
+}
+
 // --- MASTER TRADER CREATION ---
 
 export async function createMasterTraderAdmin(data: {
-  name: string;
-  strategy: string;
-  winRate: number;
-  totalProfit: number;
-  monthlyReturn: number;
-  activePair: string;
-  tradeType: string;
-  leverage: number;
+  name: string; strategy: string; winRate: number; totalProfit: number;
+  monthlyReturn: number; activePair: string; tradeType: string; leverage: number;
 }) {
   try {
     await pool.query(
       `INSERT INTO master_traders (name, strategy, win_rate, total_profit, monthly_return, active_pair, trade_type, leverage)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        data.name, data.strategy, data.winRate, 
-        data.totalProfit, data.monthlyReturn, 
-        data.activePair, data.tradeType, data.leverage
-      ]
+      [data.name, data.strategy, data.winRate, data.totalProfit, data.monthlyReturn, data.activePair, data.tradeType, data.leverage]
     );
     return { success: true, message: `Master Trader "${data.name}" published!` };
   } catch (error) {
@@ -192,25 +281,14 @@ export async function createMasterTraderAdmin(data: {
 // --- SIGNALS CREATION ---
 
 export async function createSignalAdmin(data: {
-  pair: string;
-  type: string;
-  entryPrice: string;
-  targetPrice1: string;
-  targetPrice2: string;
-  stopLoss: string;
-  timeframe: string;
-  riskLevel: string;
-  notes: string;
+  pair: string; type: string; entryPrice: string; targetPrice1: string;
+  targetPrice2: string; stopLoss: string; timeframe: string; riskLevel: string; notes: string;
 }) {
   try {
     await pool.query(
       `INSERT INTO signals (pair, type, entry_price, target_price_1, target_price_2, stop_loss, timeframe, risk_level, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        data.pair, data.type, data.entryPrice,
-        data.targetPrice1, data.targetPrice2, data.stopLoss,
-        data.timeframe, data.riskLevel, data.notes
-      ]
+      [data.pair, data.type, data.entryPrice, data.targetPrice1, data.targetPrice2, data.stopLoss, data.timeframe, data.riskLevel, data.notes]
     );
     return { success: true, message: `Signal for ${data.pair} broadcasted live!` };
   } catch (error) {
@@ -219,7 +297,7 @@ export async function createSignalAdmin(data: {
   }
 }
 
-// --- DEPOSIT WALLET CONFIGURATION (RAW SQL PG POOL) ---
+// --- DEPOSIT WALLET CONFIGURATION ---
 
 export async function getSystemAddresses() {
   try {
@@ -241,7 +319,7 @@ export async function getSystemAddresses() {
   }
 }
 
-export async function updateSystemAddress(addresses: { BTC: string, ETH: string, USDT_TRC20: string }) {
+export async function updateSystemAddress(addresses: { BTC: string, ETH: string, USDT_TRC20: string }){
   try {
     const keys = [
       { key: 'address_BTC', value: addresses.BTC },

@@ -49,13 +49,12 @@ export default function PricingSection() {
           </div>
           <h3 className="text-2xl font-bold text-white mb-2">Pro Terminal</h3>
           <div className="flex items-end gap-1 mb-2">
-            {/* The Toggle Logic for $55 vs $44 */}
-            <div className="text-4xl font-extrabold text-white">{isAnnual ? '$44' : '$55'}</div>
+            <div className="text-4xl font-extrabold text-white">{isAnnual ? '$80' : '$100'}</div>
             <div className="text-gray-400 mb-1">/mo</div>
           </div>
           {/* Helper text to explain the billing math clearly */}
           <div className="text-xs text-blue-400 font-medium mb-4 h-4">
-            {isAnnual ? 'Billed annually at $528/yr' : 'Billed monthly'}
+            {isAnnual ? 'Billed annually at $960/yr' : 'Billed monthly'}
           </div>
           <p className="text-sm text-gray-400 mb-8 pb-8 border-b border-white/10">For active traders seeking a quantitative edge.</p>
           <ul className="space-y-4 mb-8 flex-1">
@@ -65,8 +64,10 @@ export default function PricingSection() {
             <li className="flex items-center gap-3 text-white font-medium text-sm"><CheckCircle2 className="text-blue-400" size={18} /> Direct trader strategy calls (1/mo)</li>
             <li className="flex items-center gap-3 text-white font-medium text-sm"><CheckCircle2 className="text-blue-400" size={18} /> Algorithmic orders (TWAP/VWAP)</li>
           </ul>
-          <Link href="/register" className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold transition-all text-center shadow-lg shadow-blue-600/20 flex-shrink-0">
-            Start 14-Day Free Trial
+          
+          {/* Linked to the new dedicated upgrade page */}
+          <Link href="/dashboard/upgrade" className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold transition-all text-center shadow-lg shadow-blue-600/20 flex-shrink-0">
+            Upgrade to Pro
           </Link>
         </div>
 

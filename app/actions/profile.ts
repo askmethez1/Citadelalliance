@@ -22,12 +22,42 @@ export async function getUserProfile() {
     const userId = await getCurrentUserId();
     if (!userId) return null;
 
-    const { rows } = await pool.query(
-      'SELECT first_name, last_name, email, country FROM users WHERE id = $1 LIMIT 1',
-      [userId]
+    // We check if the 'is_pro' column exists before querying to prevent crashes
+    const checkCol = await pool.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='is_pro'`
     );
+
+    const hasProColumns = checkCol.rows.length > 0;
+
+    // Dynamically build the SELECT query based on whether the pro columns exist yet
+    const query = hasProColumns 
+      ? 'SELECT first_name, last_name, email, country, is_pro, pro_plan_type, pro_expiry FROM users WHERE id = $1 LIMIT 1'
+      : 'SELECT first_name, last_name, email, country FROM users WHERE id = $1 LIMIT 1';
+
+    const { rows } = await pool.query(query, [userId]);
     
-    if (rows.length > 0) return rows[0];
+    if (rows.length > 0) {
+      const user = rows[0];
+      
+      // If the user's Pro Expiration date has passed, we treat them as non-Pro on the frontend.
+      let activeProStatus = false;
+      if (user.is_pro && user.pro_expiry) {
+        const expiryDate = new Date(user.pro_expiry);
+        if (expiryDate > new Date()) {
+          activeProStatus = true;
+        }
+      }
+
+      return {
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email,
+        country: user.country,
+        isPro: activeProStatus,
+        proPlanType: user.pro_plan_type || null,
+        proExpiry: user.pro_expiry || null
+      };
+    }
     return null;
   } catch (error) {
     console.error('Error fetching user profile from Neon:', error);

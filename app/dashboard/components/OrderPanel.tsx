@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { Info, AlertTriangle, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Info, AlertTriangle, ChevronDown, ChevronUp, Loader2, Wallet, Gift, CheckCircle2 } from 'lucide-react';
 
 export interface TradingAsset {
   symbol: string;
@@ -12,6 +12,8 @@ interface OrderPanelProps {
   selectedAsset: TradingAsset;
   currentPrice: number;
   freeMargin: number;
+  walletType: 'REAL' | 'BONUS';
+  setWalletType: (type: 'REAL' | 'BONUS') => void;
   isProcessing: boolean;
   onExecuteOrder: (order: {
     type: 'BUY' | 'SELL';
@@ -31,6 +33,8 @@ export default function OrderPanel({
   selectedAsset,
   currentPrice,
   freeMargin,
+  walletType,
+  setWalletType,
   isProcessing,
   onExecuteOrder
 }: OrderPanelProps) {
@@ -111,6 +115,57 @@ export default function OrderPanel({
       {/* SCROLLABLE INNER CONTAINER */}
       <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar min-h-0">
         
+        {/* WALLET SELECTION - CHECKMARK CARDS */}
+        <div className="grid grid-cols-2 gap-2 mb-1">
+          {/* Real Fund Option */}
+          <div 
+            onClick={() => setWalletType('REAL')}
+            className={`cursor-pointer rounded-xl p-2.5 border transition-all flex items-center justify-between group ${
+              walletType === 'REAL' 
+                ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.1)]' 
+                : 'bg-[#0B0E14] border-white/5 hover:border-white/10'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-lg transition-colors ${walletType === 'REAL' ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-gray-500'}`}>
+                <Wallet size={14} />
+              </div>
+              <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${walletType === 'REAL' ? 'text-blue-400' : 'text-gray-400'}`}>
+                Real Fund
+              </span>
+            </div>
+            {walletType === 'REAL' ? (
+              <CheckCircle2 size={16} className="text-blue-500 shrink-0" />
+            ) : (
+              <div className="w-4 h-4 rounded-full border-2 border-gray-600 group-hover:border-gray-500 shrink-0 transition-colors" />
+            )}
+          </div>
+
+          {/* Bonus Option */}
+          <div 
+            onClick={() => setWalletType('BONUS')}
+            className={`cursor-pointer rounded-xl p-2.5 border transition-all flex items-center justify-between group ${
+              walletType === 'BONUS' 
+                ? 'bg-purple-500/10 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.1)]' 
+                : 'bg-[#0B0E14] border-white/5 hover:border-white/10'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-lg transition-colors ${walletType === 'BONUS' ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-gray-500'}`}>
+                <Gift size={14} />
+              </div>
+              <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${walletType === 'BONUS' ? 'text-purple-400' : 'text-gray-400'}`}>
+                Bonus
+              </span>
+            </div>
+            {walletType === 'BONUS' ? (
+              <CheckCircle2 size={16} className="text-purple-500 shrink-0" />
+            ) : (
+              <div className="w-4 h-4 rounded-full border-2 border-gray-600 group-hover:border-gray-500 shrink-0 transition-colors" />
+            )}
+          </div>
+        </div>
+
         {/* 1. MARGIN MODE & LEVERAGE SELECTOR */}
         <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/10">
           <div className="bg-[#0f1117] p-1 rounded-xl flex border border-white/5 w-full max-w-[200px]">
@@ -147,7 +202,7 @@ export default function OrderPanel({
           <div className="flex justify-between items-center text-[10px] font-semibold text-gray-400">
             <span>1x</span>
             <span className={`flex items-center gap-1 ${leverage > 20 ? 'text-amber-400 font-bold' : 'text-gray-300'}`}>
-              {leverage > 20 && <AlertTriangle size={11} className="animate-pulse" />} 
+              {leverage > 20 && <AlertTriangle size={11} className="animate-pulse" />}{' '}
               {leverage}x Leverage
             </span>
             <span>100x</span>
@@ -342,8 +397,10 @@ export default function OrderPanel({
 
           {/* AVAILABLE BALANCE */}
           <div className="flex justify-between items-center text-xs px-1">
-            <span className="text-gray-400 font-medium">Available Margin</span>
-            <span className={`font-mono font-bold ${isMarginExceeded ? 'text-rose-400' : 'text-white'}`}>
+            <span className="text-gray-400 font-medium flex items-center gap-1.5">
+              Available {walletType === 'BONUS' ? 'Bonus' : 'Margin'}
+            </span>
+            <span className={`font-mono font-bold ${isMarginExceeded ? 'text-rose-400' : (walletType === 'BONUS' ? 'text-purple-400' : 'text-white')}`}>
               ${freeMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>

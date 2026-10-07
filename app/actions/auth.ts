@@ -61,7 +61,6 @@ export async function registerUser(input: RegisterInput) {
       })
       .returning();
 
-    // Safely insert activity log
     try {
       await db.insert(activityLogs).values({
         userId: newUser.id,
@@ -76,7 +75,7 @@ export async function registerUser(input: RegisterInput) {
     cookieStore.set('citadel_session', String(newUser.id), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 7,
       path: '/',
     });
 
@@ -114,7 +113,6 @@ export async function loginUser(input: { email: string; password: string }) {
       return { success: false, error: "Invalid email or password." };
     }
 
-    // CHECK BAN STATUS BEFORE ALLOWING LOGIN
     if (existingUser.isBanned) {
       return { success: false, error: "Your account has been suspended. Please contact support to appeal." };
     }
@@ -125,7 +123,6 @@ export async function loginUser(input: { email: string; password: string }) {
       return { success: false, error: "Invalid email or password." };
     }
 
-    // Safely insert activity log
     try {
       await db.insert(activityLogs).values({
         userId: existingUser.id,
@@ -140,7 +137,7 @@ export async function loginUser(input: { email: string; password: string }) {
     cookieStore.set('citadel_session', String(existingUser.id), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 7,
       path: '/',
     });
 
@@ -166,7 +163,7 @@ export async function checkAuthStatus(): Promise<boolean> {
   return !!session?.value;
 }
 
-// 4. FETCH LOGGED IN USER ROLE (Safe Direct SQL)
+// 4. FETCH LOGGED IN USER ROLE
 export async function getUserRole(): Promise<string> {
   try {
     const cookieStore = await cookies();
@@ -177,7 +174,6 @@ export async function getUserRole(): Promise<string> {
     const userId = parseInt(session.value, 10);
     if (isNaN(userId)) return 'user';
 
-    // Direct SQL Query avoids Drizzle ORM mapping errors on missing optional schema fields
     const { rows } = await pool.query(
       'SELECT role FROM users WHERE id = $1 LIMIT 1',
       [userId]
@@ -194,7 +190,7 @@ export async function getUserRole(): Promise<string> {
   }
 }
 
-// 5. CHECK BAN STATUS (Used for active session interception)
+// 5. CHECK BAN STATUS
 export async function checkBanStatus(): Promise<boolean> {
   try {
     const cookieStore = await cookies();
@@ -220,4 +216,127 @@ export async function checkBanStatus(): Promise<boolean> {
 export async function logoutUser() {
   const cookieStore = await cookies();
   cookieStore.delete('citadel_session');
+}
+
+// 7. REQUEST 6-DIGIT PASSWORD RESET PIN
+export async function requestPasswordReset(email: string) {
+  if (!email) return { success: false, message: "Email address is required." };
+  
+  const cleanEmail = email.toLowerCase().trim();
+
+  try {
+    const { rows } = await pool.query('SELECT id, first_name FROM users WHERE email = $1 LIMIT 1', [cleanEmail]);
+    
+    if (rows.length === 0) {
+      // Return success to prevent email discovery
+      return { success: true, message: "If registered, a 6-digit PIN has been sent." };
+    }
+
+    const user = rows[0];
+
+    // Generate random 6-digit PIN
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    const pinExpires = new Date(Date.now() + 15 * 60 * 1000); // Expires in 15 mins
+
+    // Save PIN to DB
+    await pool.query(
+      'UPDATE users SET reset_pin = $1, reset_pin_expires = $2 WHERE id = $3',
+      [pin, pinExpires, user.id]
+    );
+
+    // Terminal log for quick local testing without needing email
+    console.log(`\n=============================================================`);
+    console.log(`🔑 [LOCAL TEST PIN] Password Reset Code for ${cleanEmail}:`);
+    console.log(`👉   ${pin}   (Expires in 15 minutes)`);
+    console.log(`=============================================================\n`);
+
+    // Sendlib Email Integration (If API keys are present in .env)
+    const sendlibApiKey = process.env.SENDLIB_API_KEY;
+    const sendlibFromEmail = process.env.SENDLIB_FROM_EMAIL;
+
+    if (sendlibApiKey && sendlibFromEmail) {
+      try {
+        await fetch('https://sendlib.samueltuoyo.com/api/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${sendlibApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: sendlibFromEmail,
+            to: cleanEmail,
+            subject: `${pin} is your Citadel password reset code`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #1E293B; border-radius: 12px; background-color: #0B0E14; color: #FFFFFF;">
+                <h2 style="color: #3B82F6; margin-bottom: 10px;">Citadel Security</h2>
+                <p style="color: #94A3B8; font-size: 14px;">Use the verification code below to reset your password. This code will expire in 15 minutes.</p>
+                <div style="background-color: #151924; border: 1px solid #334155; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #60A5FA; padding: 16px; border-radius: 10px; margin: 20px 0;">
+                  ${pin}
+                </div>
+                <p style="color: #64748B; font-size: 12px;">If you did not request this code, please ignore this email.</p>
+              </div>
+            `,
+          }),
+        });
+      } catch (sendlibErr) {
+        console.error("Failed to deliver via Sendlib:", sendlibErr);
+      }
+    }
+
+    return { success: true, message: "Reset code generated." };
+  } catch (error) {
+    console.error("Request Password Reset Error:", error);
+    return { success: false, message: "Server error generating reset PIN." };
+  }
+}
+
+// 8. RESET PASSWORD WITH PIN
+export async function resetPasswordWithPin(input: { email: string; pin: string; newPassword: string }) {
+  const { email, pin, newPassword } = input;
+
+  if (!email || !pin || !newPassword) {
+    return { success: false, message: "Please fill in all required fields." };
+  }
+
+  if (newPassword.length < 6) {
+    return { success: false, message: "Password must be at least 6 characters long." };
+  }
+
+  const cleanEmail = email.toLowerCase().trim();
+  const cleanPin = pin.trim();
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, reset_pin, reset_pin_expires FROM users WHERE email = $1 LIMIT 1',
+      [cleanEmail]
+    );
+
+    if (rows.length === 0) {
+      return { success: false, message: "Invalid verification code or email address." };
+    }
+
+    const user = rows[0];
+
+    if (!user.reset_pin || user.reset_pin !== cleanPin) {
+      return { success: false, message: "Incorrect verification code. Please check and try again." };
+    }
+
+    if (new Date(user.reset_pin_expires) < new Date()) {
+      return { success: false, message: "Verification code has expired. Please request a new code." };
+    }
+
+    // Hash new password & clear PIN
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await db.update(users).set({ passwordHash }).where(eq(users.id, user.id));
+
+    await pool.query(
+      'UPDATE users SET reset_pin = NULL, reset_pin_expires = NULL WHERE id = $1',
+      [user.id]
+    );
+
+    return { success: true, message: "Password updated successfully!" };
+  } catch (error) {
+    console.error("Reset Password With PIN Error:", error);
+    return { success: false, message: "Failed to reset password. Please try again." };
+  }
 }

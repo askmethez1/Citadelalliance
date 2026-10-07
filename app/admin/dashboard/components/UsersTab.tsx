@@ -9,29 +9,30 @@ interface UsersTabProps {
   users: any[];
   refreshData: () => void;
   showAlert: (message: string, type: ModalType, title?: string) => void;
+  onSelectUser?: (user: any) => void; // Fixed TypeScript Error: Added for the Inspector Modal
 }
 
-export default function UsersTab({ users, refreshData, showAlert }: UsersTabProps) {
+export default function UsersTab({ users, refreshData, showAlert, onSelectUser }: UsersTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [selectedManageUser, setSelectedManageUser] = useState<any | null>(null); // For Balance Override Modal
   const [editBalance, setEditBalance] = useState<string>('');
   const [creditAmount, setCreditAmount] = useState<string>('');
   const [creditNote, setCreditNote] = useState<string>('');
 
   const filteredUsers = users.filter(u => 
     searchQuery === '' ||
-    u.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.country.toLowerCase().includes(searchQuery.toLowerCase())
+    (u.first_name && u.first_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (u.last_name && u.last_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (u.country && u.country.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const handleUpdateBalance = async () => {
-    if (!selectedUser) return;
-    const res = await updateUserBalanceAdmin(selectedUser.id, parseFloat(editBalance));
+    if (!selectedManageUser) return;
+    const res = await updateUserBalanceAdmin(selectedManageUser.id, parseFloat(editBalance));
     if (res.success) {
       showAlert(res.message, 'success', 'Balance Updated');
-      setSelectedUser(null);
+      setSelectedManageUser(null);
       refreshData();
     } else {
       showAlert(res.message, 'error', 'Update Failed');
@@ -39,7 +40,7 @@ export default function UsersTab({ users, refreshData, showAlert }: UsersTabProp
   };
 
   const handleCreditUser = async () => {
-    if (!selectedUser) return;
+    if (!selectedManageUser) return;
     
     // Safety check to prevent Next.js Server Action serialization crashes
     const amount = parseFloat(creditAmount);
@@ -48,13 +49,13 @@ export default function UsersTab({ users, refreshData, showAlert }: UsersTabProp
       return;
     }
 
-    const res = await creditUserDepositAdmin(selectedUser.id, amount, creditNote);
+    const res = await creditUserDepositAdmin(selectedManageUser.id, amount, creditNote);
     
     if (res.success) {
       showAlert(res.message, 'success', 'Account Credited');
       setCreditAmount('');
       setCreditNote('');
-      setSelectedUser(null);
+      setSelectedManageUser(null);
       refreshData();
     } else {
       showAlert(res.message, 'error', 'Credit Failed');
@@ -77,7 +78,7 @@ export default function UsersTab({ users, refreshData, showAlert }: UsersTabProp
             type="text" 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search Name, Email, Country..."
+            placeholder="Search Name, Email..."
             className="w-full bg-[#0B0E14] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
           />
         </div>
@@ -89,14 +90,19 @@ export default function UsersTab({ users, refreshData, showAlert }: UsersTabProp
             <tr className="border-b border-white/5 text-xs uppercase text-gray-500 bg-[#0B0E14]/50">
               <th className="p-4 font-semibold">User</th>
               <th className="p-4 font-semibold">System Role</th>
-              <th className="p-4 font-semibold">Country</th>
-              <th className="p-4 font-semibold">Live Balance</th>
+              <th className="p-4 font-semibold">Liquid Balance</th>
+              <th className="p-4 font-semibold">Trading Funds</th>
+              <th className="p-4 font-semibold">Total Equity</th>
               <th className="p-4 font-semibold text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5 text-sm font-sans">
             {filteredUsers.map((u) => (
-              <tr key={u.id} className="hover:bg-white/[0.02] transition-colors">
+              <tr 
+                key={u.id} 
+                onClick={() => onSelectUser && onSelectUser(u)} 
+                className="hover:bg-white/[0.02] transition-colors cursor-pointer"
+              >
                 <td className="p-4">
                   <p className="font-bold text-white">{u.first_name} {u.last_name}</p>
                   <p className="text-xs text-gray-500 font-mono">{u.email}</p>
@@ -108,14 +114,20 @@ export default function UsersTab({ users, refreshData, showAlert }: UsersTabProp
                     {u.role || 'user'}
                   </span>
                 </td>
-                <td className="p-4 text-xs text-gray-300">{u.country}</td>
                 <td className="p-4 font-mono font-bold text-green-400">
-                  ${u.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(u.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td className="p-4 font-mono font-bold text-yellow-400">
+                  ${(u.tradingBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td className="p-4 font-mono font-bold text-blue-400">
+                  ${(u.totalEquity || u.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
                 <td className="p-4 text-right">
                   <button
-                    onClick={() => {
-                      setSelectedUser(u);
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevents the row's onClick (Inspector Modal) from firing
+                      setSelectedManageUser(u);
                       setEditBalance(u.balance.toString());
                     }}
                     className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/20"
@@ -130,12 +142,12 @@ export default function UsersTab({ users, refreshData, showAlert }: UsersTabProp
       </div>
 
       {/* BALANCE MANAGE MODAL */}
-      {selectedUser && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      {selectedManageUser && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
           <div className="bg-[#151924] border border-white/10 rounded-3xl p-6 sm:p-8 w-full max-w-md space-y-5 shadow-2xl">
             <div>
-              <h3 className="text-lg font-bold text-white">Manage Balance: {selectedUser.first_name}</h3>
-              <p className="text-xs text-gray-400 mt-1">Current Balance: <b className="text-green-400">${selectedUser.balance.toFixed(2)}</b></p>
+              <h3 className="text-lg font-bold text-white">Manage Balance: {selectedManageUser.first_name}</h3>
+              <p className="text-xs text-gray-400 mt-1">Current Balance: <b className="text-green-400">${selectedManageUser.balance.toFixed(2)}</b></p>
             </div>
 
             <div className="space-y-2">
@@ -181,7 +193,7 @@ export default function UsersTab({ users, refreshData, showAlert }: UsersTabProp
             </div>
 
             <button 
-              onClick={() => setSelectedUser(null)} 
+              onClick={() => setSelectedManageUser(null)} 
               className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-gray-400 rounded-xl text-xs font-bold transition-all"
             >
               Cancel
