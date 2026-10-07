@@ -11,6 +11,7 @@ import {
   Eye, EyeOff, Copy, QrCode
 } from 'lucide-react';
 import { getUserProfile, updateUserProfile, updatePassword } from '@/app/actions/profile';
+import { submitKycDocument, getUserKycStatus } from '@/app/actions/kyc'; // <-- ADDED getUserKycStatus
 
 type KYCStatus = 'unverified' | 'pending' | 'verified';
 
@@ -41,12 +42,7 @@ export default function ProfilePage() {
   });
 
   const showAlert = (message: string, type: ModalType = 'info', title?: string) => {
-    setModalConfig({
-      isOpen: true,
-      message,
-      type,
-      title
-    });
+    setModalConfig({ isOpen: true, message, type, title });
   };
 
   const closeModal = () => {
@@ -105,9 +101,16 @@ export default function ProfilePage() {
             firstName: data.first_name || '',
             lastName: data.last_name || '',
             email: data.email,
-            country: detectedCountry, // Forces auto-detected country into the input
+            country: detectedCountry,
           });
         }
+
+        // FORCE FETCH KYC STATUS VIA RAW SQL TO BYPASS DRIZZLE ORM
+        const kycRes = await getUserKycStatus();
+        if (kycRes.success) {
+          setKycStatus(kycRes.status as KYCStatus);
+        }
+
       } catch (error) {
         showAlert("Failed to load profile data from the server.", "error", "Connection Error");
       } finally {
@@ -124,15 +127,43 @@ export default function ProfilePage() {
     }
   };
 
+  // CLOUDINARY UPLOAD LOGIC
   const submitKYC = async () => {
     if (!selectedFile) return;
     setIsUploading(true);
     
-    setTimeout(() => {
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'citadel');
+
+      const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'mue1ttuu';
+      
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      
+      if (data.secure_url) {
+        const dbRes = await submitKycDocument(data.secure_url);
+        
+        if (dbRes.success) {
+          setKycStatus('pending');
+          showAlert("Your verification documents have been received and are under compliance review.", "success", "KYC Submitted");
+        } else {
+          showAlert("Failed to save KYC status to database.", "error");
+        }
+      } else {
+        showAlert(data.error?.message || "Failed to upload image to Cloudinary.", "error");
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
+      showAlert("An unexpected error occurred during upload.", "error");
+    } finally {
       setIsUploading(false);
-      setKycStatus('pending');
-      showAlert("Your verification documents have been received and are under compliance review.", "success", "KYC Submitted");
-    }, 2000);
+    }
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -342,79 +373,87 @@ export default function ProfilePage() {
                 {/* Identity Verification (KYC) */}
                 <div className="lg:col-span-1">
                   <div className="bg-[#151924] border border-white/5 rounded-3xl p-6 sm:p-8 shadow-xl sticky top-24">
-                    <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                      Identity Verification
-                    </h3>
-                    <p className="text-xs text-gray-400 mb-6 leading-relaxed">
-                      Verify your identity to unlock higher deposit limits, institutional trading tools, and fiat withdrawals.
-                    </p>
-
-                    <div className="mb-8">
-                      {kycStatus === 'unverified' && (
-                        <div className="flex items-center gap-3 p-4 rounded-2xl bg-red-500/10 border border-red-500/20">
-                          <ShieldAlert className="text-red-500 shrink-0" size={24} />
-                          <div>
-                            <p className="text-red-500 font-bold text-sm">Unverified Account</p>
-                            <p className="text-red-400/70 text-xs mt-0.5">Trading limits applied</p>
-                          </div>
+                    {kycStatus === 'verified' ? (
+                      <div className="text-center py-4">
+                        <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4 border border-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.2)]">
+                          <ShieldCheck className="text-green-500" size={32} />
                         </div>
-                      )}
-                      {kycStatus === 'pending' && (
-                        <div className="flex items-center gap-3 p-4 rounded-2xl bg-yellow-500/10 border border-yellow-500/20">
-                          <Clock className="text-yellow-500 shrink-0 animate-pulse" size={24} />
-                          <div>
-                            <p className="text-yellow-500 font-bold text-sm">Verification Pending</p>
-                            <p className="text-yellow-400/70 text-xs mt-0.5">Review takes 1-2 hours</p>
-                          </div>
+                        <h3 className="text-xl font-bold text-white mb-2">Identity Verified</h3>
+                        <p className="text-sm text-gray-400 mb-6 leading-relaxed">
+                          Your KYC documents have been approved. Your account is fully verified with maximum deposit limits and fiat withdrawals unlocked.
+                        </p>
+                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#0B0E14] border border-green-500/20 rounded-xl text-green-400 text-xs font-bold uppercase tracking-wider">
+                          <CheckCircle2 size={16} /> Tier 2 Status Active
                         </div>
-                      )}
-                      {kycStatus === 'verified' && (
-                        <div className="flex items-center gap-3 p-4 rounded-2xl bg-green-500/10 border border-green-500/20">
-                          <ShieldCheck className="text-green-500 shrink-0" size={24} />
-                          <div>
-                            <p className="text-green-500 font-bold text-sm">Fully Verified</p>
-                            <p className="text-green-400/70 text-xs mt-0.5">All features unlocked</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {kycStatus === 'unverified' && (
-                      <div className="space-y-4">
-                        <div className="border-2 border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center text-center hover:border-blue-500/50 hover:bg-blue-500/5 transition-all group relative">
-                          <input 
-                            type="file" 
-                            accept="image/jpeg, image/png, application/pdf" 
-                            onChange={handleFileChange}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                          />
-                          <div className="w-12 h-12 rounded-full bg-[#0B0E14] border border-white/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                            <UploadCloud className="text-gray-400 group-hover:text-blue-500" size={20} />
-                          </div>
-                          <p className="text-sm font-bold text-white mb-1">
-                            {selectedFile ? selectedFile.name : "Upload Government ID"}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {selectedFile ? "Click to change file" : "Passport, Driver's License, or ID Card"}
-                          </p>
-                        </div>
-
-                        <button 
-                          onClick={submitKYC}
-                          disabled={!selectedFile || isUploading}
-                          className="w-full py-3.5 bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
-                        >
-                          {isUploading ? "Processing..." : "Submit Document"}
-                        </button>
                       </div>
-                    )}
+                    ) : (
+                      <>
+                        <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                          Identity Verification
+                        </h3>
+                        <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+                          Verify your identity to unlock higher deposit limits, institutional trading tools, and fiat withdrawals.
+                        </p>
 
-                    {kycStatus === 'pending' && (
-                      <div className="text-center p-6 border border-white/5 rounded-2xl bg-white/[0.02]">
-                        <CheckCircle2 className="mx-auto text-gray-500 mb-3" size={32} />
-                        <p className="text-sm text-gray-300 font-bold mb-1">Documents Received</p>
-                        <p className="text-xs text-gray-500">We will notify you via email once your compliance check is complete.</p>
-                      </div>
+                        <div className="mb-8">
+                          {kycStatus === 'unverified' && (
+                            <div className="flex items-center gap-3 p-4 rounded-2xl bg-red-500/10 border border-red-500/20">
+                              <ShieldAlert className="text-red-500 shrink-0" size={24} />
+                              <div>
+                                <p className="text-red-500 font-bold text-sm">Unverified Account</p>
+                                <p className="text-red-400/70 text-xs mt-0.5">Trading limits applied</p>
+                              </div>
+                            </div>
+                          )}
+                          {kycStatus === 'pending' && (
+                            <div className="flex items-center gap-3 p-4 rounded-2xl bg-yellow-500/10 border border-yellow-500/20">
+                              <Clock className="text-yellow-500 shrink-0 animate-pulse" size={24} />
+                              <div>
+                                <p className="text-yellow-500 font-bold text-sm">Verification Pending</p>
+                                <p className="text-yellow-400/70 text-xs mt-0.5">Review takes 1-2 hours</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {kycStatus === 'unverified' && (
+                          <div className="space-y-4">
+                            <div className="border-2 border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center text-center hover:border-blue-500/50 hover:bg-blue-500/5 transition-all group relative">
+                              <input 
+                                type="file" 
+                                accept="image/jpeg, image/png, application/pdf" 
+                                onChange={handleFileChange}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+                              />
+                              <div className="w-12 h-12 rounded-full bg-[#0B0E14] border border-white/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                <UploadCloud className="text-gray-400 group-hover:text-blue-500" size={20} />
+                              </div>
+                              <p className="text-sm font-bold text-white mb-1">
+                                {selectedFile ? selectedFile.name : "Upload Government ID"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {selectedFile ? "Click to change file" : "Passport, Driver's License, or ID Card"}
+                              </p>
+                            </div>
+
+                            <button 
+                              onClick={submitKYC}
+                              disabled={!selectedFile || isUploading}
+                              className="w-full py-3.5 bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
+                            >
+                              {isUploading ? "Processing..." : "Submit Document"}
+                            </button>
+                          </div>
+                        )}
+
+                        {kycStatus === 'pending' && (
+                          <div className="text-center p-6 border border-white/5 rounded-2xl bg-white/[0.02]">
+                            <CheckCircle2 className="mx-auto text-gray-500 mb-3" size={32} />
+                            <p className="text-sm text-gray-300 font-bold mb-1">Documents Received</p>
+                            <p className="text-xs text-gray-500">We will notify you via email once your compliance check is complete.</p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

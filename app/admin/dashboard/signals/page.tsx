@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader2, Zap, Send, Trash2, CheckCircle2, XCircle, Activity, Calculator, RefreshCw, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
+import { 
+  Loader2, Zap, Send, Trash2, CheckCircle2, XCircle, Activity, 
+  Calculator, RefreshCw, TrendingUp, TrendingDown, AlertTriangle, 
+  ChevronLeft, ChevronRight // <-- Added for pagination icons
+} from 'lucide-react';
 import { getSignals, createSignal, updateSignalStatus, deleteSignal } from '@/app/actions/signals';
 import { TRADING_ASSETS } from '@/app/config/assets';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
@@ -18,6 +22,10 @@ export default function AdminSignalsPage() {
   const [signals, setSignals] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5; // <-- Adjust how many signals show per page here
 
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [isFetchingPrices, setIsFetchingPrices] = useState(false);
@@ -144,6 +152,7 @@ export default function AdminSignalsPage() {
       setFormData(prev => ({
         ...prev, targetPrice1: '', targetPrice2: '', stopLoss: '', notes: ''
       }));
+      setCurrentPage(1); // Reset to first page so they can see the new signal
       loadSignals();
     } else {
       showAlert(res.error || "Failed to broadcast signal.", "error");
@@ -168,6 +177,12 @@ export default function AdminSignalsPage() {
     const res = await deleteSignal(id);
     if (res.success) {
       showAlert(`Signal deleted successfully.`, "success");
+      
+      // If deleting the last item on the current page, go back a page
+      if (currentSignals.length === 1 && currentPage > 1) {
+        setCurrentPage(p => p - 1);
+      }
+      
       loadSignals();
     } else {
       showAlert("Failed to delete signal.", "error");
@@ -177,6 +192,10 @@ export default function AdminSignalsPage() {
   const formEntry = parseFloat(formData.entryPrice);
   const formLev = formData.leverage || 10;
   const previewLiqPrice = formEntry > 0 ? (formData.type === 'LONG' ? formEntry * (1 - 1 / formLev) : formEntry * (1 + 1 / formLev)) : 0;
+
+  // Pagination Calculations
+  const totalPages = Math.ceil(signals.length / itemsPerPage);
+  const currentSignals = signals.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div className="animate-in fade-in duration-300 relative">
@@ -316,95 +335,120 @@ export default function AdminSignalsPage() {
               <p className="text-gray-500 text-sm">Create a new setup using the form to alert your users.</p>
             </div>
           ) : (
-            signals.map(signal => {
-              const isLong = signal.type === 'LONG';
-              const lev = signal.leverage || 10;
-              const entry = parseFloat(signal.entryPrice);
-              const target1 = parseFloat(signal.targetPrice1);
-              const sl = parseFloat(signal.stopLoss);
+            <>
+              {currentSignals.map(signal => {
+                const isLong = signal.type === 'LONG';
+                const lev = signal.leverage || 10;
+                const entry = parseFloat(signal.entryPrice);
+                const target1 = parseFloat(signal.targetPrice1);
+                const sl = parseFloat(signal.stopLoss);
 
-              let projectedProfitPct = 0;
-              let projectedLossPct = 0;
-              let liqPrice = 0;
+                let projectedProfitPct = 0;
+                let projectedLossPct = 0;
+                let liqPrice = 0;
 
-              if (entry > 0) {
-                liqPrice = isLong ? entry * (1 - 1 / lev) : entry * (1 + 1 / lev);
-                projectedProfitPct = isLong ? ((target1 - entry) / entry) * 100 * lev : ((entry - target1) / entry) * 100 * lev;
-                projectedLossPct = isLong ? ((entry - sl) / entry) * 100 * lev : ((sl - entry) / entry) * 100 * lev;
-              }
+                if (entry > 0) {
+                  liqPrice = isLong ? entry * (1 - 1 / lev) : entry * (1 + 1 / lev);
+                  projectedProfitPct = isLong ? ((target1 - entry) / entry) * 100 * lev : ((entry - target1) / entry) * 100 * lev;
+                  projectedLossPct = isLong ? ((entry - sl) / entry) * 100 * lev : ((sl - entry) / entry) * 100 * lev;
+                }
 
-              return (
-                <div key={signal.id} className="bg-[#151924] border border-white/5 rounded-2xl p-5 shadow-lg flex flex-col xl:flex-row gap-6 justify-between transition-colors hover:border-white/10">
-                  
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-4">
-                      <span className={`px-2 py-1 rounded text-[10px] font-extrabold font-mono uppercase ${
-                        isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                      }`}>
-                        {signal.type} {lev}x
-                      </span>
-                      <span className="text-lg font-extrabold text-white">{signal.pair}</span>
-                      <span className="text-xs text-gray-500 font-mono">SIG-{signal.id}</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4 bg-[#0B0E14] p-4 rounded-xl border border-white/5 font-mono text-xs relative overflow-hidden">
-                      <div className="relative z-10">
-                        <span className="text-gray-500 block text-[9px] uppercase mb-0.5">Entry</span>
-                        <span className="text-white">${entry.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="relative z-10">
-                        <span className="text-orange-400 block text-[9px] uppercase mb-0.5 flex items-center gap-1"><AlertTriangle size={10} /> Liq. Price</span>
-                        <span className="text-orange-400 font-bold">${liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="relative z-10">
-                        <span className="text-gray-500 block text-[9px] uppercase mb-0.5">Target 1</span>
-                        <span className="text-green-400">${target1.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="relative z-10">
-                        <span className="text-gray-500 block text-[9px] uppercase mb-0.5">Proj. Profit</span>
-                        <span className="text-green-400 flex items-center gap-1"><TrendingUp size={12}/> +{projectedProfitPct.toFixed(2)}%</span>
-                      </div>
-                      <div className="relative z-10">
-                        <span className="text-gray-500 block text-[9px] uppercase mb-0.5">Proj. Loss (SL)</span>
-                        <span className="text-red-400 flex items-center gap-1"><TrendingDown size={12}/> -{projectedLossPct.toFixed(2)}%</span>
-                      </div>
-                    </div>
+                return (
+                  <div key={signal.id} className="bg-[#151924] border border-white/5 rounded-2xl p-5 shadow-lg flex flex-col xl:flex-row gap-6 justify-between transition-colors hover:border-white/10">
                     
-                    <p className="text-xs text-gray-400"><b>Note:</b> {signal.notes}</p>
-                  </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-4">
+                        <span className={`px-2 py-1 rounded text-[10px] font-extrabold font-mono uppercase ${
+                          isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {signal.type} {lev}x
+                        </span>
+                        <span className="text-lg font-extrabold text-white">{signal.pair}</span>
+                        <span className="text-xs text-gray-500 font-mono">SIG-{signal.id}</span>
+                      </div>
 
-                  <div className="flex flex-row xl:flex-col justify-between items-center xl:items-end min-w-[120px] border-t xl:border-t-0 xl:border-l border-white/5 pt-4 xl:pt-0 xl:pl-6">
-                    <div className="text-right hidden xl:block mb-4">
-                      <div className="text-[10px] text-gray-500 uppercase font-bold mb-1">Status</div>
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-bold ${
-                        signal.status === 'ACTIVE' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
-                        signal.status === 'TARGET_HIT' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
-                        'bg-gray-500/10 text-gray-400 border border-gray-500/20'
-                      }`}>
-                        {signal.status.replace('_', ' ')}
-                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4 bg-[#0B0E14] p-4 rounded-xl border border-white/5 font-mono text-xs relative overflow-hidden">
+                        <div className="relative z-10">
+                          <span className="text-gray-500 block text-[9px] uppercase mb-0.5">Entry</span>
+                          <span className="text-white">${entry.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="relative z-10">
+                          <span className="text-orange-400 block text-[9px] uppercase mb-0.5 flex items-center gap-1"><AlertTriangle size={10} /> Liq. Price</span>
+                          <span className="text-orange-400 font-bold">${liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="relative z-10">
+                          <span className="text-gray-500 block text-[9px] uppercase mb-0.5">Target 1</span>
+                          <span className="text-green-400">${target1.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="relative z-10">
+                          <span className="text-gray-500 block text-[9px] uppercase mb-0.5">Proj. Profit</span>
+                          <span className="text-green-400 flex items-center gap-1"><TrendingUp size={12}/> +{projectedProfitPct.toFixed(2)}%</span>
+                        </div>
+                        <div className="relative z-10">
+                          <span className="text-gray-500 block text-[9px] uppercase mb-0.5">Proj. Loss (SL)</span>
+                          <span className="text-red-400 flex items-center gap-1"><TrendingDown size={12}/> -{projectedLossPct.toFixed(2)}%</span>
+                        </div>
+                      </div>
+                      
+                      <p className="text-xs text-gray-400"><b>Note:</b> {signal.notes}</p>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {signal.status === 'ACTIVE' && (
-                        <>
-                          <button onClick={() => handleStatusUpdate(signal.id, 'TARGET_HIT')} className="p-2 bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-white rounded-lg transition-colors" title="Mark Target Hit">
-                            <CheckCircle2 size={16} />
-                          </button>
-                          <button onClick={() => handleStatusUpdate(signal.id, 'CLOSED')} className="p-2 bg-gray-500/10 text-gray-400 hover:bg-gray-500 hover:text-white rounded-lg transition-colors" title="Mark Closed">
-                            <XCircle size={16} />
-                          </button>
-                        </>
-                      )}
-                      <button onClick={() => handleDelete(signal.id)} className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors" title="Delete Signal">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
+                    <div className="flex flex-row xl:flex-col justify-between items-center xl:items-end min-w-[120px] border-t xl:border-t-0 xl:border-l border-white/5 pt-4 xl:pt-0 xl:pl-6">
+                      <div className="text-right hidden xl:block mb-4">
+                        <div className="text-[10px] text-gray-500 uppercase font-bold mb-1">Status</div>
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-bold ${
+                          signal.status === 'ACTIVE' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                          signal.status === 'TARGET_HIT' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                          'bg-gray-500/10 text-gray-400 border border-gray-500/20'
+                        }`}>
+                          {signal.status.replace('_', ' ')}
+                        </span>
+                      </div>
 
+                      <div className="flex items-center gap-2">
+                        {signal.status === 'ACTIVE' && (
+                          <>
+                            <button onClick={() => handleStatusUpdate(signal.id, 'TARGET_HIT')} className="p-2 bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-white rounded-lg transition-colors" title="Mark Target Hit">
+                              <CheckCircle2 size={16} />
+                            </button>
+                            <button onClick={() => handleStatusUpdate(signal.id, 'CLOSED')} className="p-2 bg-gray-500/10 text-gray-400 hover:bg-gray-500 hover:text-white rounded-lg transition-colors" title="Mark Closed">
+                              <XCircle size={16} />
+                            </button>
+                          </>
+                        )}
+                        <button onClick={() => handleDelete(signal.id)} className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors" title="Delete Signal">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })}
+
+              {/* PAGINATION CONTROLS */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-6 bg-[#151924] border border-white/5 rounded-2xl p-4">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-bold text-white flex items-center gap-2 transition-colors"
+                  >
+                    <ChevronLeft size={16} /> Previous
+                  </button>
+                  <span className="text-gray-400 text-sm font-medium">
+                    Page <span className="text-white font-bold">{currentPage}</span> of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-bold text-white flex items-center gap-2 transition-colors"
+                  >
+                    Next <ChevronRight size={16} />
+                  </button>
                 </div>
-              );
-            })
+              )}
+            </>
           )}
         </div>
       </div>
