@@ -1,17 +1,17 @@
 "use client";
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Lock, Loader2, ShieldCheck, CheckCircle2, Eye, EyeOff } from 'lucide-react';
-// FIX: Replaced '@/app/actions/auth' with relative path for consistent resolution
-import { resetPasswordWithToken } from '../actions/auth';
+import { Lock, Loader2, ShieldCheck, CheckCircle2, Eye, EyeOff, Mail, KeyRound } from 'lucide-react';
+import { resetPasswordWithPin } from '../actions/auth';
 
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams.get('token');
 
+  const [email, setEmail] = useState('');
+  const [pin, setPin] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -20,39 +20,39 @@ function ResetPasswordForm() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  // If there's no token in the URL, block them
-  if (!token) {
-    return (
-      <div className="text-center">
-        <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-          <Lock size={32} className="text-red-500" />
-        </div>
-        <h2 className="text-2xl font-bold text-white mb-3">Invalid Link</h2>
-        <p className="text-gray-400 text-sm mb-8 leading-relaxed">
-          This password reset link is invalid or has missing parameters. Please request a new one.
-        </p>
-        <Link href="/forgot-password" className="w-full block py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold transition-all">
-          Request New Link
-        </Link>
-      </div>
-    );
-  }
+  // Auto-fill email if passed via URL parameters (optional fallback)
+  useEffect(() => {
+    const urlEmail = searchParams.get('email');
+    if (urlEmail) setEmail(urlEmail);
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
+    if (!email || !pin || !newPassword || !confirmPassword) {
+      setError("Please fill in all fields.");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters long.");
+    
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters long.");
       return;
     }
 
     setIsLoading(true);
-    const res = await resetPasswordWithToken(token, newPassword);
+    
+    // Call the correct backend function matching auth.ts
+    const res = await resetPasswordWithPin({ 
+      email: email.trim(), 
+      pin: pin.trim(), 
+      newPassword 
+    });
 
     if (res.success) {
       setSuccess(true);
@@ -84,9 +84,9 @@ function ResetPasswordForm() {
 
   return (
     <>
-      <h2 className="text-2xl font-bold text-white mb-2">Create New Password</h2>
+      <h2 className="text-2xl font-bold text-white mb-2">Reset Password</h2>
       <p className="text-gray-400 text-sm mb-8">
-        Your new password must be different from previously used passwords.
+        Enter the 6-digit verification code sent to your email along with your new password.
       </p>
 
       {error && (
@@ -96,6 +96,41 @@ function ResetPasswordForm() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        
+        {/* Email Field */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Email Address</label>
+          <div className="relative">
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+            <input 
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              className="w-full bg-[#0B0E14] border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+              required
+            />
+          </div>
+        </div>
+
+        {/* 6-Digit PIN Field */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">6-Digit Reset Code</label>
+          <div className="relative">
+            <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+            <input 
+              type="text"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} // Restrict to numbers only
+              placeholder="123456"
+              className="w-full bg-[#0B0E14] border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-white text-sm font-mono tracking-widest focus:outline-none focus:border-blue-500 transition-colors"
+              required
+            />
+          </div>
+        </div>
+
+        {/* New Password Field */}
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">New Password</label>
           <div className="relative">
@@ -118,6 +153,7 @@ function ResetPasswordForm() {
           </div>
         </div>
 
+        {/* Confirm Password Field */}
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Confirm Password</label>
           <div className="relative">
@@ -135,7 +171,7 @@ function ResetPasswordForm() {
 
         <button 
           type="submit" 
-          disabled={isLoading || !newPassword || !confirmPassword}
+          disabled={isLoading || !email || !pin || !newPassword || !confirmPassword}
           className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {isLoading ? <Loader2 size={18} className="animate-spin" /> : null}
