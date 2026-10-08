@@ -6,7 +6,7 @@ import TopHeader from '@/app/dashboard/components/TopHeader';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 import { 
   CreditCard, ExternalLink, Globe, ShieldCheck, 
-  CheckCircle2, ArrowRight, Wallet, Info, Copy, Check
+  ArrowRight, Copy, Check
 } from 'lucide-react';
 import { getUserProfile } from '@/app/actions/profile';
 
@@ -99,82 +99,61 @@ export default function BuyCryptoPage() {
         <TopHeader />
 
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full">
-          <div className="max-w-6xl mx-auto space-y-8">
+          <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8">
             
             {/* Header Title */}
             <div>
-              <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-2 tracking-tight flex items-center gap-3">
-                <CreditCard className="text-blue-500" size={32} /> Buy Crypto & Fund Account
+              <h1 className="text-2xl sm:text-4xl font-extrabold text-white mb-2 tracking-tight flex items-center gap-2 sm:gap-3">
+                <CreditCard className="text-blue-500 shrink-0" size={28} /> 
+                <span className="truncate">Buy Crypto</span>
               </h1>
-              <p className="text-gray-400 text-sm">Buy crypto instantly in the UK or internationally using non-custodial fiat providers, then transfer to Citadel to trade.</p>
+              <p className="text-gray-400 text-xs sm:text-sm">Buy crypto instantly in the UK or internationally using non-custodial fiat providers, then transfer to Citadel to trade.</p>
             </div>
 
             {/* How It Works Steps Banner */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-[#151924] border border-white/5 rounded-2xl p-5 shadow-lg relative">
-                <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 font-extrabold flex items-center justify-center text-sm mb-3">1</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+              <div className="bg-[#151924] border border-white/5 rounded-2xl p-4 sm:p-5 shadow-lg relative">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 font-extrabold flex items-center justify-center text-xs sm:text-sm mb-3">1</div>
                 <h4 className="text-white font-bold text-sm mb-1">Choose Non-Custodial Provider</h4>
-                <p className="text-xs text-gray-400">Select MoonPay, Banxa, or Ramp depending on your region (UK, Europe, US, Global).</p>
+                <p className="text-[11px] sm:text-xs text-gray-400">Select MoonPay, Banxa, or Ramp depending on your region.</p>
               </div>
 
-              <div className="bg-[#151924] border border-white/5 rounded-2xl p-5 shadow-lg relative">
-                <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 font-extrabold flex items-center justify-center text-sm mb-3">2</div>
+              <div className="bg-[#151924] border border-white/5 rounded-2xl p-4 sm:p-5 shadow-lg relative">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 font-extrabold flex items-center justify-center text-xs sm:text-sm mb-3">2</div>
                 <h4 className="text-white font-bold text-sm mb-1">Buy to Personal Wallet</h4>
-                <p className="text-xs text-gray-400">Pay with UK Faster Payments, Visa/Mastercard, or Apple Pay directly to your wallet.</p>
+                <p className="text-[11px] sm:text-xs text-gray-400">Pay with UK Faster Payments, Visa/Mastercard, or Apple Pay directly to your wallet.</p>
               </div>
 
-              <div className="bg-[#151924] border border-white/5 rounded-2xl p-5 shadow-lg relative">
-                <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 font-extrabold flex items-center justify-center text-sm mb-3">3</div>
+              <div className="bg-[#151924] border border-white/5 rounded-2xl p-4 sm:p-5 shadow-lg relative sm:col-span-2 md:col-span-1">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 font-extrabold flex items-center justify-center text-xs sm:text-sm mb-3">3</div>
                 <h4 className="text-white font-bold text-sm mb-1">Deposit to Citadel Desk</h4>
-                <p className="text-xs text-gray-400">Transfer the acquired USDT/BTC to your Citadel wallet address to activate trading.</p>
+                <p className="text-[11px] sm:text-xs text-gray-400">Transfer the acquired USDT/BTC to your Citadel wallet address to activate trading.</p>
               </div>
             </div>
 
-            {/* Quick Copy Citadel Address Box */}
-            {/* <div className="bg-gradient-to-r from-blue-950/40 via-[#151924] to-[#0B0E14] border border-blue-500/30 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
-                  <Wallet size={16} /> Citadel Deposit Destination
-                </div>
-                <h3 className="text-lg font-bold text-white">Your Dedicated USDT (TRC20) Address</h3>
-                <p className="text-xs text-gray-400">Use this address as the delivery destination when purchasing crypto through any provider.</p>
-              </div>
-
-              <div className="w-full md:w-auto flex items-center gap-2 bg-[#0B0E14] border border-white/10 px-4 py-3 rounded-2xl shrink-0">
-                <span className="font-mono text-xs text-white truncate max-w-[220px] sm:max-w-xs">{treasuryAddress}</span>
-                <button
-                  onClick={copyTreasuryAddress}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
-                >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div> */}
-
             {/* Recommended On-Ramp Providers List */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Globe size={20} className="text-blue-500" /> Supported Regional On-Ramps
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
+                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  <Globe size={18} className="text-blue-500 shrink-0" /> Supported Regional On-Ramps
                 </h3>
-                <span className="text-xs text-gray-500 font-mono">Location Detected: {userCountry}</span>
+                <span className="text-[10px] sm:text-xs text-gray-500 font-mono">Location Detected: {userCountry}</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {PROVIDERS.map((provider) => (
                   <div 
                     key={provider.name} 
-                    className="bg-[#151924] border border-white/5 hover:border-blue-500/30 rounded-3xl p-6 shadow-xl flex flex-col justify-between space-y-6 transition-all group"
+                    className="bg-[#151924] border border-white/5 hover:border-blue-500/30 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col justify-between space-y-5 sm:space-y-6 transition-all group"
                   >
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
+                      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2">
+                        <span className="text-[10px] sm:text-xs font-bold text-blue-400 bg-blue-500/10 px-2.5 sm:px-3 py-1 rounded-full border border-blue-500/20 w-fit">
                           {provider.recommendedFor}
                         </span>
-                        <div className="flex gap-1">
+                        <div className="flex flex-wrap gap-1">
                           {provider.regions.map(r => (
-                            <span key={r} className="text-[10px] font-mono text-gray-500 bg-white/5 px-2 py-0.5 rounded">
+                            <span key={r} className="text-[9px] sm:text-[10px] font-mono text-gray-500 bg-white/5 px-2 py-0.5 rounded">
                               {r}
                             </span>
                           ))}
@@ -182,12 +161,12 @@ export default function BuyCryptoPage() {
                       </div>
 
                       <div>
-                        <h4 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">{provider.name}</h4>
-                        <p className="text-xs text-gray-400 mt-1">{provider.tagline}</p>
+                        <h4 className="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors">{provider.name}</h4>
+                        <p className="text-[11px] sm:text-xs text-gray-400 mt-1">{provider.tagline}</p>
                       </div>
 
-                      <div className="p-3 bg-[#0B0E14] rounded-xl border border-white/5 text-xs text-gray-400">
-                        <span className="text-gray-500 block text-[10px] uppercase font-bold mb-0.5">Supported Payment Options</span>
+                      <div className="p-2.5 sm:p-3 bg-[#0B0E14] rounded-xl border border-white/5 text-[11px] sm:text-xs text-gray-400">
+                        <span className="text-gray-500 block text-[9px] sm:text-[10px] uppercase font-bold mb-0.5">Supported Payment Options</span>
                         {provider.supportedPayment}
                       </div>
                     </div>
@@ -196,9 +175,9 @@ export default function BuyCryptoPage() {
                       href={provider.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-full py-3.5 bg-white/5 hover:bg-blue-600 text-white rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-white/10 group-hover:border-blue-500/50 shadow-lg"
+                      className="w-full py-3 sm:py-3.5 bg-white/5 hover:bg-blue-600 text-white rounded-2xl text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-2 border border-white/10 group-hover:border-blue-500/50 shadow-lg"
                     >
-                      Buy on {provider.name} <ExternalLink size={14} />
+                      Buy on {provider.name} <ExternalLink size={14} className="shrink-0" />
                     </a>
                   </div>
                 ))}
@@ -206,22 +185,22 @@ export default function BuyCryptoPage() {
             </div>
 
             {/* Direct Wallet Deposit Shortcut */}
-            <div className="bg-[#151924] border border-white/5 rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-green-500/10 border border-green-500/20 text-green-400 flex items-center justify-center shrink-0">
-                  <ShieldCheck size={24} />
+            <div className="bg-[#151924] border border-white/5 rounded-3xl p-5 sm:p-8 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 sm:gap-6">
+              <div className="flex items-start sm:items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-green-500/10 border border-green-500/20 text-green-400 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                  <ShieldCheck size={20} className="sm:w-6 sm:h-6" />
                 </div>
                 <div>
-                  <h4 className="text-white font-bold text-base">Already Have Crypto in Your Personal Wallet?</h4>
-                  <p className="text-xs text-gray-400 mt-0.5">Skip third-party providers and transfer directly to your Citadel trading balance.</p>
+                  <h4 className="text-white font-bold text-sm sm:text-base">Already Have Crypto in Your Personal Wallet?</h4>
+                  <p className="text-[11px] sm:text-xs text-gray-400 mt-1">Skip third-party providers and transfer directly to your Citadel trading balance.</p>
                 </div>
               </div>
 
               <a
                 href="/dashboard/wallet"
-                className="shrink-0 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center gap-2"
+                className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[11px] sm:text-xs font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 shrink-0"
               >
-                Go to Treasury Deposit <ArrowRight size={16} />
+                Go to Treasury Deposit <ArrowRight size={16} className="shrink-0" />
               </a>
             </div>
 

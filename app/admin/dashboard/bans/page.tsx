@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Ban, Search, ShieldCheck, AlertTriangle } from 'lucide-react';
-import { getAllUsersAdmin, toggleUserBanAdmin } from '@/app/actions/admin';
+import { Ban, Search, ShieldCheck, AlertTriangle, Crown, User } from 'lucide-react';
+import { getAllUsersAdmin, toggleUserBanAdmin, updateUserRoleAdmin } from '@/app/actions/admin';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 import LoadingSpinner from '@/app/components/ui/LoadingSpinner';
 
@@ -11,8 +11,9 @@ export default function AdminBansPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Custom Confirmation Modal State
+  // Custom Confirmation Modal States
   const [userToToggle, setUserToToggle] = useState<{ id: number, isBanned: boolean, name: string } | null>(null);
+  const [userToToggleRole, setUserToToggleRole] = useState<{ id: number, role: string, name: string } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Global Modal State
@@ -51,6 +52,7 @@ export default function AdminBansPage() {
       (u.email && u.email.toLowerCase().includes(query));
   });
 
+  // Handle Ban Toggle
   const executeToggleBan = async () => {
     if (!userToToggle) return;
     setIsProcessing(true);
@@ -68,20 +70,39 @@ export default function AdminBansPage() {
     setUserToToggle(null); // Close modal
   };
 
+  // Handle Admin Role Toggle
+  const executeToggleRole = async () => {
+    if (!userToToggleRole) return;
+    setIsProcessing(true);
+
+    const newRole = userToToggleRole.role === 'admin' ? 'user' : 'admin';
+    const res = await updateUserRoleAdmin(userToToggleRole.id, newRole);
+    
+    if (res.success) {
+      showAlert(res.message, 'success', 'Role Updated');
+      loadData(); // Refresh the list
+    } else {
+      showAlert(res.message || "Failed to update user role.", 'error', 'Action Failed');
+    }
+    
+    setIsProcessing(false);
+    setUserToToggleRole(null); // Close modal
+  };
+
   if (isLoading) return <LoadingSpinner label="Loading User Directory..." />;
 
   return (
     <div className="animate-in fade-in duration-300">
-      <div className="bg-[#151924] border border-red-500/10 rounded-3xl p-6 shadow-xl space-y-6 relative overflow-hidden">
+      <div className="bg-[#151924] border border-red-500/10 rounded-3xl p-4 sm:p-6 shadow-xl space-y-6 relative overflow-hidden">
         {/* Background Glow */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4 relative z-10">
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Ban size={20} className="text-red-500" /> Restrict & Ban Users
+              <Ban size={20} className="text-red-500" /> Restrict & Manage Users
             </h3>
-            <p className="text-xs text-gray-400 mt-0.5">Revoke system access for users violating platform policies.</p>
+            <p className="text-xs text-gray-400 mt-0.5">Revoke system access or grant administrator privileges.</p>
           </div>
 
           <div className="relative w-full sm:w-64">
@@ -96,14 +117,14 @@ export default function AdminBansPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto relative z-10">
-          <table className="w-full text-left">
+        <div className="overflow-x-auto relative z-10 custom-scrollbar">
+          <table className="w-full text-left min-w-[700px]">
             <thead>
               <tr className="border-b border-white/5 text-xs uppercase text-gray-500 bg-[#0B0E14]/50">
-                <th className="p-4 font-semibold">User</th>
-                <th className="p-4 font-semibold">Role</th>
-                <th className="p-4 font-semibold">Current Status</th>
-                <th className="p-4 font-semibold text-right">Actions</th>
+                <th className="p-4 font-semibold whitespace-nowrap">User</th>
+                <th className="p-4 font-semibold whitespace-nowrap">Role</th>
+                <th className="p-4 font-semibold whitespace-nowrap">Current Status</th>
+                <th className="p-4 font-semibold text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-sm font-sans">
@@ -118,35 +139,62 @@ export default function AdminBansPage() {
                   const isAdmin = u.role === 'admin';
                   return (
                     <tr key={u.id} className={`transition-colors ${u.isBanned ? 'bg-red-950/10' : 'hover:bg-white/[0.02]'}`}>
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap">
                         <p className={`font-bold ${u.isBanned ? 'text-red-400 line-through opacity-70' : 'text-white'}`}>
                           {u.firstName} {u.lastName}
                         </p>
                         <p className="text-xs text-gray-500 font-mono">{u.email}</p>
                       </td>
-                      <td className="p-4 font-mono text-xs text-gray-400">
-                        {u.role || 'user'}
+                      <td className="p-4 font-mono text-xs whitespace-nowrap">
+                        {isAdmin ? (
+                          <span className="bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-md border border-blue-500/20 flex items-center gap-1.5 w-fit">
+                            <Crown size={12} /> Admin
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 flex items-center gap-1.5 w-fit">
+                            <User size={12} /> User
+                          </span>
+                        )}
                       </td>
-                      <td className="p-4 text-xs font-bold">
+                      <td className="p-4 text-xs font-bold whitespace-nowrap">
                         {u.isBanned ? (
                           <span className="text-red-400 flex items-center gap-1"><Ban size={12}/> Suspended</span>
                         ) : (
                           <span className="text-green-400 flex items-center gap-1"><ShieldCheck size={12}/> Active</span>
                         )}
                       </td>
-                      <td className="p-4 text-right">
-                        <button
-                          onClick={() => setUserToToggle({ id: u.id, isBanned: u.isBanned, name: `${u.firstName} ${u.lastName}` })}
-                          disabled={isAdmin} // Prevent banning other admins
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed ${
-                            u.isBanned 
-                              ? 'bg-white/5 hover:bg-white/10 text-white border border-white/10' 
-                              : 'bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30'
-                          }`}
-                        >
-                          <Ban size={14} />
-                          {u.isBanned ? 'Revoke Ban' : 'Ban User'}
-                        </button>
+                      <td className="p-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          
+                          {/* Role Toggle Button */}
+                          <button
+                            onClick={() => setUserToToggleRole({ id: u.id, role: u.role, name: `${u.firstName} ${u.lastName}` })}
+                            disabled={u.isBanned} // Don't allow changing role if they are banned
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed ${
+                              isAdmin 
+                                ? 'bg-white/5 hover:bg-white/10 text-white border border-white/10' 
+                                : 'bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30'
+                            }`}
+                          >
+                            <Crown size={14} />
+                            {isAdmin ? 'Revoke Admin' : 'Make Admin'}
+                          </button>
+
+                          {/* Ban Toggle Button */}
+                          <button
+                            onClick={() => setUserToToggle({ id: u.id, isBanned: u.isBanned, name: `${u.firstName} ${u.lastName}` })}
+                            disabled={isAdmin} // Prevent banning other admins
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed ${
+                              u.isBanned 
+                                ? 'bg-white/5 hover:bg-white/10 text-white border border-white/10' 
+                                : 'bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30'
+                            }`}
+                          >
+                            <Ban size={14} />
+                            {u.isBanned ? 'Revoke Ban' : 'Ban User'}
+                          </button>
+
+                        </div>
                       </td>
                     </tr>
                   );
@@ -156,9 +204,9 @@ export default function AdminBansPage() {
           </table>
         </div>
 
-        {/* CUSTOM CONFIRMATION MODAL */}
+        {/* CUSTOM CONFIRMATION MODAL - BAN */}
         {userToToggle && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-in fade-in duration-200">
             <div className="bg-[#151924] border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-center">
               
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 border ${
@@ -190,6 +238,49 @@ export default function AdminBansPage() {
                     userToToggle.isBanned 
                       ? 'bg-green-600 hover:bg-green-500 text-white shadow-green-600/20' 
                       : 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/20'
+                  }`}
+                >
+                  {isProcessing ? 'Processing...' : 'Confirm'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* CUSTOM CONFIRMATION MODAL - ROLE TOGGLE */}
+        {userToToggleRole && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-in fade-in duration-200">
+            <div className="bg-[#151924] border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative text-center">
+              
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 border ${
+                userToToggleRole.role === 'admin' ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+              }`}>
+                {userToToggleRole.role === 'admin' ? <User size={28} /> : <Crown size={28} />}
+              </div>
+
+              <h3 className="text-lg font-bold text-white mb-2">
+                {userToToggleRole.role === 'admin' ? 'Revoke Admin Privileges?' : 'Grant Admin Privileges?'}
+              </h3>
+              
+              <p className="text-sm text-gray-400 mb-6">
+                Are you sure you want to {userToToggleRole.role === 'admin' ? 'remove admin rights for' : 'give full system admin rights to'} <strong className="text-white">{userToToggleRole.name}</strong>?
+              </p>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setUserToToggleRole(null)} 
+                  disabled={isProcessing}
+                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-gray-300 font-bold rounded-xl text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={executeToggleRole} 
+                  disabled={isProcessing}
+                  className={`flex-1 py-3 font-bold rounded-xl text-sm transition-all shadow-lg flex items-center justify-center ${
+                    userToToggleRole.role === 'admin'
+                      ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/20' 
+                      : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20'
                   }`}
                 >
                   {isProcessing ? 'Processing...' : 'Confirm'}

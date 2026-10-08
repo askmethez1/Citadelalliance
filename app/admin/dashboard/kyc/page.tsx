@@ -1,11 +1,16 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, XCircle, ShieldAlert, ExternalLink, AlertTriangle } from 'lucide-react';
-import { getPendingKycRequests, resolveKycRequest } from '@/app/actions/kyc';
+import { Loader2, CheckCircle2, XCircle, ShieldAlert, ExternalLink, AlertTriangle, ShieldCheck } from 'lucide-react';
+// Make sure to import the new getVerifiedKycUsers function
+import { getPendingKycRequests, resolveKycRequest, getVerifiedKycUsers } from '@/app/actions/kyc';
 
 export default function AdminKYCPage() {
+  const [activeTab, setActiveTab] = useState<'pending' | 'verified'>('pending');
+  
   const [requests, setRequests] = useState<any[]>([]);
+  const [verifiedUsers, setVerifiedUsers] = useState<any[]>([]);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState<number | null>(null);
 
@@ -20,17 +25,21 @@ export default function AdminKYCPage() {
     status: 'unverified',
   });
 
-  const fetchRequests = async () => {
+  const fetchAllData = async () => {
     setIsLoading(true);
-    const res = await getPendingKycRequests();
-    if (res.success) {
-      setRequests(res.data);
-    }
+    const [pendingRes, verifiedRes] = await Promise.all([
+      getPendingKycRequests(),
+      getVerifiedKycUsers()
+    ]);
+    
+    if (pendingRes.success) setRequests(pendingRes.data);
+    if (verifiedRes.success) setVerifiedUsers(verifiedRes.data);
+    
     setIsLoading(false);
   };
 
   useEffect(() => {
-    fetchRequests();
+    fetchAllData();
   }, []);
 
   const promptResolve = (userId: number, status: 'verified' | 'unverified') => {
@@ -40,15 +49,22 @@ export default function AdminKYCPage() {
   const handleConfirmResolve = async () => {
     const { userId, status } = confirmConfig;
     
-    // Close modal immediately
     setConfirmConfig(prev => ({ ...prev, isOpen: false }));
     setProcessingId(userId);
     
     const res = await resolveKycRequest(userId, status);
     
     if (res.success) {
-      // Remove the processed user from the UI
-      setRequests(requests.filter(req => req.id !== userId));
+      // Find the user being processed before removing them
+      const processedUser = requests.find(req => req.id === userId);
+      
+      // Remove from pending list
+      setRequests(prev => prev.filter(req => req.id !== userId));
+      
+      // If approved, instantly add them to the verified list
+      if (status === 'verified' && processedUser) {
+        setVerifiedUsers(prev => [{ ...processedUser, kyc_status: 'verified' }, ...prev]);
+      }
     } else {
       alert("Failed to update KYC status.");
     }
@@ -57,92 +73,170 @@ export default function AdminKYCPage() {
 
   return (
     <div className="animate-in fade-in duration-300">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight mb-2">KYC Approvals</h1>
           <p className="text-gray-400 text-sm">Review and verify user identity documents.</p>
         </div>
-        <div className="bg-[#151924] border border-white/5 rounded-xl px-4 py-2 flex items-center gap-2">
-          <ShieldAlert size={18} className="text-yellow-500" />
-          <span className="text-white font-bold">{requests.length} Pending</span>
-        </div>
+      </div>
+
+      {/* TABS NAVIGATION */}
+      <div className="flex items-center gap-6 mb-8 border-b border-white/5">
+        <button 
+          onClick={() => setActiveTab('pending')}
+          className={`pb-4 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === 'pending' 
+              ? 'border-blue-500 text-white' 
+              : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          <ShieldAlert size={16} className={activeTab === 'pending' ? 'text-yellow-500' : ''} />
+          Pending Requests
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'pending' ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-gray-500'}`}>
+            {requests.length}
+          </span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('verified')}
+          className={`pb-4 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === 'verified' 
+              ? 'border-blue-500 text-white' 
+              : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          <ShieldCheck size={16} className={activeTab === 'verified' ? 'text-green-500' : ''} />
+          Approved Users
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'verified' ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-gray-500'}`}>
+            {verifiedUsers.length}
+          </span>
+        </button>
       </div>
 
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-32 bg-[#151924] border border-white/5 rounded-3xl">
           <Loader2 size={32} className="text-blue-500 animate-spin mb-4" />
-          <p className="text-gray-500 text-sm">Fetching pending KYC requests...</p>
+          <p className="text-gray-500 text-sm">Fetching KYC data...</p>
         </div>
-      ) : requests.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-32 bg-[#151924] border border-white/5 rounded-3xl">
-          <CheckCircle2 size={48} className="text-green-500/50 mb-4" />
-          <h3 className="text-white font-bold text-lg mb-1">All Caught Up!</h3>
-          <p className="text-gray-500 text-sm">There are no pending KYC requests to review.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {requests.map((req) => (
-            <div key={req.id} className="bg-[#151924] border border-white/5 rounded-3xl overflow-hidden shadow-xl flex flex-col">
-              {/* Document Image Viewer */}
-              <div className="h-48 bg-[#0B0E14] relative group border-b border-white/5 flex items-center justify-center p-2">
-                {req.kyc_document_url ? (
-                  <>
-                    <img 
-                      src={req.kyc_document_url} 
-                      alt="KYC Document" 
-                      className="max-h-full max-w-full object-contain"
-                    />
-                    <a 
-                      href={req.kyc_document_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white font-bold text-sm backdrop-blur-sm"
-                    >
-                      <ExternalLink size={18} /> View Full Size
-                    </a>
-                  </>
-                ) : (
-                  <span className="text-gray-500 text-sm">No Document Attached</span>
-                )}
-              </div>
+      ) : activeTab === 'pending' ? (
+        /* PENDING TAB CONTENT */
+        requests.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-32 bg-[#151924] border border-white/5 rounded-3xl">
+            <CheckCircle2 size={48} className="text-green-500/50 mb-4" />
+            <h3 className="text-white font-bold text-lg mb-1">All Caught Up!</h3>
+            <p className="text-gray-500 text-sm">There are no pending KYC requests to review.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {requests.map((req) => (
+              <div key={req.id} className="bg-[#151924] border border-white/5 rounded-3xl overflow-hidden shadow-xl flex flex-col">
+                <div className="h-48 bg-[#0B0E14] relative group border-b border-white/5 flex items-center justify-center p-2">
+                  {req.kyc_document_url ? (
+                    <>
+                      <img 
+                        src={req.kyc_document_url} 
+                        alt="KYC Document" 
+                        className="max-h-full max-w-full object-contain"
+                      />
+                      <a 
+                        href={req.kyc_document_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white font-bold text-sm backdrop-blur-sm"
+                      >
+                        <ExternalLink size={18} /> View Full Size
+                      </a>
+                    </>
+                  ) : (
+                    <span className="text-gray-500 text-sm">No Document Attached</span>
+                  )}
+                </div>
 
-              {/* User Data */}
-              <div className="p-6 flex-1 flex flex-col justify-between">
-                <div>
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="text-lg font-bold text-white">{req.first_name} {req.last_name}</h3>
-                      <p className="text-gray-500 text-xs mt-1">{req.email}</p>
+                <div className="p-6 flex-1 flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-white">{req.first_name} {req.last_name}</h3>
+                        <p className="text-gray-500 text-xs mt-1">{req.email}</p>
+                      </div>
+                      <span className="px-2 py-1 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 text-[10px] font-bold uppercase rounded">
+                        Pending
+                      </span>
                     </div>
-                    <span className="px-2 py-1 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 text-[10px] font-bold uppercase rounded">
-                      Pending
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mt-6">
+                    <button 
+                      onClick={() => promptResolve(req.id, 'unverified')}
+                      disabled={processingId === req.id}
+                      className="py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {processingId === req.id ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
+                      Reject
+                    </button>
+                    <button 
+                      onClick={() => promptResolve(req.id, 'verified')}
+                      disabled={processingId === req.id}
+                      className="py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/20 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {processingId === req.id ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                      Approve
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        /* VERIFIED TAB CONTENT */
+        verifiedUsers.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-32 bg-[#151924] border border-white/5 rounded-3xl">
+            <ShieldCheck size={48} className="text-gray-600 mb-4" />
+            <h3 className="text-white font-bold text-lg mb-1">No Verified Users Yet</h3>
+            <p className="text-gray-500 text-sm">Approved users will appear here.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {verifiedUsers.map((user) => (
+              <div key={user.id} className="bg-[#151924] border border-white/5 rounded-3xl overflow-hidden shadow-xl flex flex-col">
+                <div className="h-48 bg-[#0B0E14] relative group border-b border-white/5 flex items-center justify-center p-2">
+                  {user.kyc_document_url ? (
+                    <>
+                      <img 
+                        src={user.kyc_document_url} 
+                        alt="KYC Document" 
+                        className="max-h-full max-w-full object-contain"
+                      />
+                      <a 
+                        href={user.kyc_document_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white font-bold text-sm backdrop-blur-sm"
+                      >
+                        <ExternalLink size={18} /> View Document
+                      </a>
+                    </>
+                  ) : (
+                    <span className="text-gray-500 text-sm">No Document Available</span>
+                  )}
+                </div>
+
+                <div className="p-6 flex-1 flex flex-col justify-between">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-lg font-bold text-white">{user.first_name} {user.last_name}</h3>
+                      <p className="text-gray-500 text-xs mt-1">{user.email}</p>
+                    </div>
+                    <span className="px-2 py-1 bg-green-500/10 text-green-500 border border-green-500/20 text-[10px] font-bold uppercase rounded flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Approved
                     </span>
                   </div>
                 </div>
-
-                {/* Action Buttons */}
-                <div className="grid grid-cols-2 gap-3 mt-6">
-                  <button 
-                    onClick={() => promptResolve(req.id, 'unverified')}
-                    disabled={processingId === req.id}
-                    className="py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {processingId === req.id ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
-                    Reject
-                  </button>
-                  <button 
-                    onClick={() => promptResolve(req.id, 'verified')}
-                    disabled={processingId === req.id}
-                    className="py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/20 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {processingId === req.id ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                    Approve
-                  </button>
-                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
       )}
 
       {/* INLINE CONFIRMATION MODAL */}

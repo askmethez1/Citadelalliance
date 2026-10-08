@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -13,7 +13,6 @@ import { logoutUser } from '@/app/actions/auth';
 interface SidebarProps {
   location?: string;
   isBanned?: boolean;
-  // Included as optional so it doesn't break any older files still passing them
   activeTab?: string; 
   setActiveTab?: (tab: string) => void; 
 }
@@ -22,6 +21,27 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
   const pathname = usePathname();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+
+  // Close sidebar on route change (for mobile)
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
+
+  // --- NEW: Lock body scroll when mobile sidebar is open ---
+  useEffect(() => {
+    if (isOpen) {
+      // Prevent background scrolling
+      document.body.style.overflow = 'hidden';
+    } else {
+      // Restore background scrolling
+      document.body.style.overflow = 'unset';
+    }
+
+    // Cleanup function in case the component unmounts while sidebar is open
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
   // --- NAVIGATION CONFIGURATION ---
   const NAV_GROUPS = [
@@ -61,10 +81,11 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
 
   return (
     <>
-      {/* MOBILE MENU TOGGLE */}
+      {/* MOBILE MENU TOGGLE - FIXED POSITIONING */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 bg-[#151924] rounded-xl border border-white/10 text-white shadow-lg backdrop-blur-md"
+        className="lg:hidden fixed top-4 left-4 z-[60] p-2.5 bg-[#151924] rounded-xl border border-white/10 text-white shadow-lg backdrop-blur-md transition-transform"
+        aria-label="Toggle Menu"
       >
         {isOpen ? <X size={20} /> : <Menu size={20} />}
       </button>
@@ -73,13 +94,14 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
       {isOpen && (
         <div
           onClick={() => setIsOpen(false)}
-          className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-sm transition-opacity"
+          className="lg:hidden fixed inset-0 bg-black/80 z-[40] backdrop-blur-sm transition-opacity"
         />
       )}
 
+      {/* SIDEBAR CONTAINER */}
       <aside className={`
-        relative w-72 bg-[#080a0f] border-r border-white/5 flex flex-col shrink-0
-        fixed inset-y-0 left-0 z-50 h-screen lg:static lg:h-auto lg:min-h-full
+        fixed inset-y-0 left-0 z-[50] w-72 bg-[#080a0f] border-r border-white/5 flex flex-col shrink-0
+        lg:static lg:h-screen lg:min-h-full
         transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         ${isBanned ? 'border-red-500/30 bg-red-950/10 overflow-hidden' : ''}
@@ -102,23 +124,23 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
         )}
 
         {/* LOGO */}
-        <div className="p-6 border-b border-white/5 lg:pt-6 pt-20">
+        <div className="p-6 border-b border-white/5 pt-20 lg:pt-6 shrink-0">
           <Link 
             href={isBanned ? "#" : "/"} 
             onClick={isBanned ? handleBannedClick : () => setIsOpen(false)}
-            className={`flex items-center gap-2 transition-opacity ${isBanned ? 'pointer-events-none opacity-50' : 'hover:opacity-80'}`}
+            className={`flex items-center gap-3 transition-opacity ${isBanned ? 'pointer-events-none opacity-50' : 'hover:opacity-80'}`}
           >
-            <div className={`w-8 h-8 rounded flex items-center justify-center ${isBanned ? 'bg-red-900' : 'bg-blue-600'}`}>
-              <LineChart className={isBanned ? 'text-red-400' : 'text-white'} size={18} />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg ${isBanned ? 'bg-red-900 shadow-red-900/20' : 'bg-blue-600 shadow-blue-600/20'}`}>
+              <LineChart className={isBanned ? 'text-red-400' : 'text-white'} size={20} />
             </div>
-            <span className={`text-xl font-extrabold tracking-tight ${isBanned ? 'text-red-500' : 'text-white'}`}>
+            <span className={`text-2xl font-extrabold tracking-tight ${isBanned ? 'text-red-500' : 'text-white'}`}>
               Citadel
             </span>
           </Link>
         </div>
 
         {/* NAVIGATION MENUS */}
-        <div className={`flex-1 overflow-y-auto py-6 px-4 scrollbar-none space-y-8 ${isBanned ? 'opacity-30 blur-[1px]' : ''}`}>
+        <div className={`flex-1 overflow-y-auto py-6 px-4 custom-scrollbar space-y-8 ${isBanned ? 'opacity-30 blur-[1px]' : ''}`}>
           {NAV_GROUPS.map((group) => (
             <div key={group.title}>
               <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-3 px-3">
@@ -148,13 +170,13 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
                       </div>
                       
                       {item.badge && (
-                        <span className="bg-yellow-500/20 text-yellow-500 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">
+                        <span className="bg-yellow-500/20 text-yellow-500 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0">
                           {item.badge}
                         </span>
                       )}
                       
                       {item.indicator && (
-                        <div className={`w-2 h-2 rounded-full ${isBanned ? 'bg-red-900' : 'bg-blue-500'}`}></div>
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${isBanned ? 'bg-red-900' : 'bg-blue-500'}`}></div>
                       )}
                     </Link>
                   );
@@ -165,9 +187,9 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
         </div>
 
         {/* FOOTER USER CARD */}
-        <div className="p-4 border-t border-white/5 bg-[#151924]/50 mt-auto">
+        <div className="p-4 border-t border-white/5 bg-[#151924]/50 mt-auto shrink-0">
           <div className="flex items-center gap-2 px-3 py-2 mb-3 bg-[#0B0E14] border border-white/5 rounded-xl">
-            <MapPin size={14} className={isBanned ? 'text-red-500' : 'text-gray-500'} />
+            <MapPin size={14} className={isBanned ? 'text-red-500 shrink-0' : 'text-gray-500 shrink-0'} />
             <div className="text-xs text-gray-400 font-mono truncate">{location}</div>
           </div>
 

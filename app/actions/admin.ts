@@ -132,7 +132,7 @@ export async function creditUserDepositAdmin(userId: number, amount: number, not
   }
 }
 
-// --- USER BAN MANAGEMENT ---
+// --- USER ROLE & BAN MANAGEMENT ---
 
 export async function toggleUserBanAdmin(userId: number, currentBanStatus: boolean) {
   try {
@@ -145,6 +145,19 @@ export async function toggleUserBanAdmin(userId: number, currentBanStatus: boole
   } catch (error) {
     console.error('Error toggling user ban:', error);
     return { success: false, message: 'Failed to update user ban status.' };
+  }
+}
+
+export async function updateUserRoleAdmin(userId: number, newRole: string) {
+  try {
+    await pool.query('UPDATE users SET role = $1 WHERE id = $2', [newRole, userId]);
+    return { 
+      success: true, 
+      message: `User role successfully updated to ${newRole.toUpperCase()}.` 
+    };
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    return { success: false, message: 'Failed to update user role.' };
   }
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Send, CheckCircle2, MoreVertical, Bot, Image as ImageIcon, X, Reply, PenTool } from 'lucide-react';
+import { Search, Send, CheckCircle2, MoreVertical, Bot, Image as ImageIcon, X, Reply, PenTool, ArrowLeft } from 'lucide-react';
 import { getAdminConversations, getAdminMessagesForUser, sendAdminMessage } from '@/app/actions/chat';
 
 interface Message {
@@ -204,12 +204,12 @@ export default function ChatTab() {
   const activeUser = conversations.find(c => c.id === activeChatId);
 
   return (
-    <div className="bg-[#151924] border border-white/5 rounded-3xl shadow-xl flex overflow-hidden h-[75vh] relative animate-in fade-in duration-300">
+    <div className="bg-[#151924] border border-white/5 rounded-2xl sm:rounded-3xl shadow-xl flex overflow-hidden h-[80vh] md:h-[75vh] min-h-[500px] relative animate-in fade-in duration-300">
       
       {/* LEFT SIDEBAR: Conversation List */}
-      <div className="w-1/3 min-w-[280px] border-r border-white/5 flex flex-col bg-[#0B0E14]/50">
-        <div className="p-5 border-b border-white/5">
-          <h2 className="text-lg font-bold text-white mb-4">Live Support Desk</h2>
+      <div className={`w-full md:w-[320px] lg:w-1/3 shrink-0 border-r-0 md:border-r border-white/5 bg-[#0B0E14]/50 flex-col ${activeChatId ? 'hidden md:flex' : 'flex'}`}>
+        <div className="p-4 sm:p-5 border-b border-white/5">
+          <h2 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4">Live Support Desk</h2>
           <div className="relative w-full">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
             <input 
@@ -217,7 +217,7 @@ export default function ChatTab() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search users..."
-              className="w-full bg-[#151924] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full bg-[#151924] border border-white/10 rounded-xl py-2 sm:py-2.5 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
         </div>
@@ -230,11 +230,11 @@ export default function ChatTab() {
               <button
                 key={conv.id}
                 onClick={() => setActiveChatId(conv.id)}
-                className={`w-full text-left p-4 border-b border-white/5 transition-all flex items-start gap-3 relative ${
+                className={`w-full text-left p-3 sm:p-4 border-b border-white/5 transition-all flex items-start gap-3 relative ${
                   activeChatId === conv.id ? 'bg-blue-600/10 border-l-2 border-l-blue-500' : 'hover:bg-white/5 border-l-2 border-l-transparent'
                 }`}
               >
-                <div className="relative shrink-0">
+                <div className="relative shrink-0 mt-0.5">
                   <div className="w-10 h-10 rounded-full bg-gray-800 border border-white/10 flex items-center justify-center font-bold text-white">
                     {conv.userName.charAt(0)}
                   </div>
@@ -243,18 +243,18 @@ export default function ChatTab() {
                 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
-                    <h4 className={`text-sm font-bold truncate ${conv.unreadCount > 0 ? 'text-white' : 'text-gray-300'}`}>
+                    <h4 className={`text-[13px] sm:text-sm font-bold truncate ${conv.unreadCount > 0 ? 'text-white' : 'text-gray-300'}`}>
                       {conv.userName}
                     </h4>
-                    <span className="text-[10px] text-gray-500 shrink-0">{conv.lastMessageTime}</span>
+                    <span className="text-[10px] text-gray-500 shrink-0 ml-2">{conv.lastMessageTime}</span>
                   </div>
-                  <p className={`text-xs truncate pr-4 ${conv.unreadCount > 0 ? 'text-blue-400 font-medium' : 'text-gray-500'}`}>
+                  <p className={`text-[11px] sm:text-xs truncate pr-4 ${conv.unreadCount > 0 ? 'text-blue-400 font-medium' : 'text-gray-500'}`}>
                     {conv.lastMessageText || 'No message yet'}
                   </p>
                 </div>
 
                 {conv.unreadCount > 0 && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg shadow-blue-600/20">
+                  <div className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg shadow-blue-600/20">
                     {conv.unreadCount}
                   </div>
                 )}
@@ -265,58 +265,66 @@ export default function ChatTab() {
       </div>
 
       {/* RIGHT SIDEBAR: Active Chat Window */}
-      <div className="flex-1 flex flex-col bg-[#151924]">
+      <div className={`flex-1 flex-col bg-[#151924] w-full ${!activeChatId ? 'hidden md:flex' : 'flex'}`}>
         {activeChatId && activeUser ? (
           <>
             {/* Chat Header */}
-            <div className="h-20 border-b border-white/5 px-6 flex items-center justify-between shrink-0 bg-white/[0.02]">
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <div className="w-10 h-10 rounded-full bg-gray-800 border border-white/10 flex items-center justify-center font-bold text-white">
+            <div className="h-16 sm:h-20 border-b border-white/5 px-4 sm:px-6 flex items-center justify-between shrink-0 bg-white/[0.02]">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                {/* Mobile Back Button */}
+                <button 
+                  onClick={() => setActiveChatId(null)}
+                  className="md:hidden p-2 -ml-2 rounded-xl text-gray-400 hover:bg-white/10 hover:text-white transition-colors shrink-0"
+                >
+                  <ArrowLeft size={20} />
+                </button>
+                
+                <div className="relative shrink-0">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gray-800 border border-white/10 flex items-center justify-center font-bold text-white text-sm sm:text-base">
                     {activeUser.userName.charAt(0)}
                   </div>
                   <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[#151924] rounded-full ${activeUser.status === 'online' ? 'bg-green-500' : 'bg-gray-500'}`}></div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-white text-[13px] sm:text-sm truncate">
                     {activeUser.userName}
                   </h3>
-                  <p className="text-xs text-gray-400 font-mono mt-0.5">{activeUser.userEmail}</p>
+                  <p className="text-[10px] sm:text-xs text-gray-400 font-mono mt-0.5 truncate">{activeUser.userEmail}</p>
                 </div>
               </div>
-              <button className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center text-gray-400 transition-colors">
-                <MoreVertical size={16} />
+              <button className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors shrink-0 ml-2">
+                <MoreVertical size={18} />
               </button>
             </div>
 
             {/* Chat Messages */}
             <div 
               ref={chatContainerRef}
-              className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
+              className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
             >
               {activeMessages.map((msg) => (
                 <div key={msg.id} className={`flex ${msg.sender === 'admin' ? 'justify-end' : 'justify-start'} group`}>
                   
-                  {/* Reply Button (Appears on Hover) */}
+                  {/* Reply Button (Appears on Hover) - Left Side */}
                   {msg.sender !== 'admin' && (
                     <button 
                       onClick={() => setReplyingTo(msg)}
-                      className="opacity-0 group-hover:opacity-100 p-2 text-gray-500 hover:text-white transition-all self-center mr-2"
+                      className="opacity-0 group-hover:opacity-100 p-2 text-gray-500 hover:text-white transition-all self-center mr-1 sm:mr-2 shrink-0 hidden sm:block"
                       title="Reply to message"
                     >
                       <Reply size={16} />
                     </button>
                   )}
 
-                  <div className={`max-w-[75%] sm:max-w-[60%] flex flex-col ${msg.sender === 'admin' ? 'items-end' : 'items-start'}`}>
+                  <div className={`max-w-[85%] sm:max-w-[75%] lg:max-w-[60%] flex flex-col ${msg.sender === 'admin' ? 'items-end' : 'items-start'}`}>
                     
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider">
                         {msg.sender === 'admin' ? 'Support Agent' : activeUser.userName}
                       </span>
                     </div>
 
-                    <div className={`px-5 py-3.5 rounded-2xl text-sm leading-relaxed shadow-lg flex flex-col ${
+                    <div className={`px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-2xl text-[13px] sm:text-sm leading-relaxed shadow-lg flex flex-col ${
                       msg.sender === 'admin' 
                         ? 'bg-blue-600 text-white rounded-tr-sm' 
                         : 'bg-[#0B0E14] border border-white/5 text-gray-300 rounded-tl-sm'
@@ -324,30 +332,40 @@ export default function ChatTab() {
                       
                       {/* Render Quoted Reply Context */}
                       {msg.replyToText && (
-                        <div className="mb-2 pl-3 py-1 border-l-2 border-white/30 text-white/70 text-xs italic bg-black/10 rounded-r-lg">
-                          {msg.replyToText.length > 60 ? msg.replyToText.substring(0, 60) + '...' : msg.replyToText}
+                        <div className="mb-2 pl-2 sm:pl-3 py-1 border-l-2 border-white/30 text-white/70 text-[11px] sm:text-xs italic bg-black/10 rounded-r-lg line-clamp-2">
+                          {msg.replyToText}
                         </div>
                       )}
 
                       {/* Render Uploaded Image */}
                       {msg.imageUrl && (
-                        <img src={msg.imageUrl} alt="Uploaded attachment" className="rounded-lg max-w-full max-h-64 object-contain mb-2 border border-white/10" />
+                        <img src={msg.imageUrl} alt="Uploaded attachment" className="rounded-lg max-w-full max-h-48 sm:max-h-64 object-contain mb-2 border border-white/10" />
                       )}
                       
-                      {msg.text && <span>{msg.text}</span>}
+                      {msg.text && <span className="break-words">{msg.text}</span>}
                     </div>
 
-                    <div className="flex items-center gap-1 mt-1.5 px-1">
-                      <span className="text-[10px] text-gray-500 font-bold">{msg.time}</span>
-                      {msg.sender === 'admin' && <CheckCircle2 size={12} className="text-blue-500" />}
+                    <div className="flex items-center justify-between w-full mt-1 px-1">
+                      {/* Mobile reply button directly under bubble for easy access */}
+                      <button 
+                        onClick={() => setReplyingTo(msg)}
+                        className="sm:hidden text-gray-500 hover:text-white p-1"
+                      >
+                        <Reply size={12} />
+                      </button>
+                      
+                      <div className="flex items-center gap-1 ml-auto">
+                        <span className="text-[9px] sm:text-[10px] text-gray-500 font-bold">{msg.time}</span>
+                        {msg.sender === 'admin' && <CheckCircle2 size={12} className="text-blue-500" />}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Reply Button for Admin Messages */}
+                  {/* Reply Button (Appears on Hover) - Right Side */}
                   {msg.sender === 'admin' && (
                     <button 
                       onClick={() => setReplyingTo(msg)}
-                      className="opacity-0 group-hover:opacity-100 p-2 text-gray-500 hover:text-white transition-all self-center ml-2"
+                      className="opacity-0 group-hover:opacity-100 p-2 text-gray-500 hover:text-white transition-all self-center ml-1 sm:ml-2 shrink-0 hidden sm:block"
                       title="Reply to message"
                     >
                       <Reply size={16} />
@@ -359,20 +377,20 @@ export default function ChatTab() {
 
             {/* Replying Context Banner */}
             {replyingTo && (
-              <div className="bg-[#0B0E14] border-t border-white/5 px-4 py-2 flex items-center justify-between">
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[10px] text-blue-400 font-bold uppercase">Replying to {replyingTo.sender === 'admin' ? 'Yourself' : activeUser.userName}</span>
-                  <span className="text-xs text-gray-400 truncate">{replyingTo.text || "Image Attachment"}</span>
+              <div className="bg-[#0B0E14] border-t border-white/5 px-3 sm:px-4 py-2 flex items-center justify-between">
+                <div className="flex flex-col min-w-0 pr-4">
+                  <span className="text-[9px] sm:text-[10px] text-blue-400 font-bold uppercase">Replying to {replyingTo.sender === 'admin' ? 'Yourself' : activeUser.userName}</span>
+                  <span className="text-[11px] sm:text-xs text-gray-400 truncate">{replyingTo.text || "Image Attachment"}</span>
                 </div>
-                <button onClick={() => setReplyingTo(null)} className="text-gray-500 hover:text-white">
+                <button onClick={() => setReplyingTo(null)} className="text-gray-500 hover:text-white shrink-0 p-1">
                   <X size={16} />
                 </button>
               </div>
             )}
 
             {/* Chat Input */}
-            <div className="p-4 border-t border-white/5 bg-[#0B0E14]/30 shrink-0">
-              <form onSubmit={handleSendReply} className="flex items-center gap-3 bg-[#151924] border border-white/10 rounded-2xl p-2 pr-3 focus-within:border-blue-500/50 transition-colors">
+            <div className="p-3 sm:p-4 border-t border-white/5 bg-[#0B0E14]/30 shrink-0">
+              <form onSubmit={handleSendReply} className="flex items-center gap-2 sm:gap-3 bg-[#151924] border border-white/10 rounded-2xl p-1.5 sm:p-2 pr-2 sm:pr-3 focus-within:border-blue-500/50 transition-colors">
                 
                 {/* Hidden File Input */}
                 <input 
@@ -386,33 +404,33 @@ export default function ChatTab() {
                 <button 
                   type="button" 
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-2.5 text-gray-500 hover:text-blue-400 transition-colors shrink-0"
+                  className="p-2 sm:p-2.5 text-gray-500 hover:text-blue-400 transition-colors shrink-0"
                 >
-                  <ImageIcon size={20} />
+                  <ImageIcon size={18} className="sm:w-5 sm:h-5" />
                 </button>
                 
                 <input 
                   type="text"
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
-                  placeholder={`Reply to ${activeUser.userName}...`}
-                  className="flex-1 bg-transparent border-none focus:outline-none text-sm text-white placeholder:text-gray-600"
+                  placeholder={`Reply...`}
+                  className="flex-1 min-w-0 bg-transparent border-none focus:outline-none text-[13px] sm:text-sm text-white placeholder:text-gray-600"
                 />
                 
                 <button 
                   type="submit"
                   disabled={(!replyText.trim() && !imagePreview) || isSending}
-                  className="p-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-gray-700 text-white rounded-xl transition-all shrink-0 shadow-lg shadow-blue-600/20"
+                  className="p-2 sm:p-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-gray-700 text-white rounded-xl transition-all shrink-0 shadow-lg shadow-blue-600/20"
                 >
-                  <Send size={18} className={replyText.trim() || imagePreview ? "translate-x-0.5 -translate-y-0.5 transition-transform" : ""} />
+                  <Send size={16} className={`sm:w-[18px] sm:h-[18px] ${replyText.trim() || imagePreview ? "translate-x-0.5 -translate-y-0.5 transition-transform" : ""}`} />
                 </button>
               </form>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+          <div className="hidden md:flex flex-1 flex-col items-center justify-center text-gray-500 p-6 text-center">
             <Bot size={48} className="mb-4 text-gray-700" />
-            <p className="text-sm font-bold">No Conversation Selected</p>
+            <p className="text-sm font-bold text-gray-400">No Conversation Selected</p>
             <p className="text-xs mt-1">Select a user from the list to view and reply to messages.</p>
           </div>
         )}
@@ -420,45 +438,65 @@ export default function ChatTab() {
 
       {/* DRAWING / ANNOTATION MODAL */}
       {isDrawingModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-6">
-          <div className="w-full max-w-2xl bg-[#151924] rounded-3xl border border-white/10 shadow-2xl overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 sm:p-6">
+          <div className="w-full max-w-2xl bg-[#151924] rounded-2xl sm:rounded-3xl border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             
-            <div className="p-4 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-              <h3 className="text-white font-bold flex items-center gap-2">
-                <PenTool size={18} className="text-red-500" /> Annotate Image
+            <div className="p-3 sm:p-4 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+              <h3 className="text-sm sm:text-base text-white font-bold flex items-center gap-2">
+                <PenTool size={16} className="text-red-500 sm:w-[18px] sm:h-[18px]" /> Annotate Image
               </h3>
-              <button onClick={() => { setIsDrawingModalOpen(false); setImagePreview(null); }} className="text-gray-400 hover:text-white">
-                <X size={20} />
+              <button onClick={() => { setIsDrawingModalOpen(false); setImagePreview(null); }} className="text-gray-400 hover:text-white p-1">
+                <X size={18} className="sm:w-5 sm:h-5" />
               </button>
             </div>
 
-            <div className="p-4 bg-[#0B0E14] flex justify-center items-center overflow-auto relative cursor-crosshair">
+            <div className="p-3 sm:p-4 bg-[#0B0E14] flex justify-center items-center overflow-auto relative cursor-crosshair min-h-[250px]">
               <canvas
                 ref={canvasRef}
                 onMouseDown={startDrawing}
                 onMouseUp={endDrawing}
                 onMouseOut={endDrawing}
                 onMouseMove={draw}
-                className="max-w-full rounded-lg shadow-lg border border-white/10"
+                onTouchStart={(e) => {
+                  // Prevent scrolling while drawing on mobile
+                  e.preventDefault(); 
+                  const touch = e.touches[0];
+                  const mouseEvent = new MouseEvent('mousedown', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                  });
+                  startDrawing(mouseEvent as any);
+                }}
+                onTouchMove={(e) => {
+                  e.preventDefault();
+                  const touch = e.touches[0];
+                  const mouseEvent = new MouseEvent('mousemove', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                  });
+                  draw(mouseEvent as any);
+                }}
+                onTouchEnd={endDrawing}
+                className="max-w-full rounded-lg shadow-lg border border-white/10 touch-none"
               />
-              <div className="absolute top-6 left-6 bg-black/60 px-3 py-1.5 rounded-lg backdrop-blur-md border border-white/10 text-xs text-white flex items-center gap-2 pointer-events-none">
-                <div className="w-2 h-2 rounded-full bg-red-500"></div> Draw to circle areas
+              <div className="absolute top-4 left-4 sm:top-6 sm:left-6 bg-black/60 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg backdrop-blur-md border border-white/10 text-[10px] sm:text-xs text-white flex items-center gap-1.5 sm:gap-2 pointer-events-none">
+                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-500"></div> Draw to circle areas
               </div>
             </div>
 
-            <div className="p-4 border-t border-white/5 flex gap-3">
+            <div className="p-3 sm:p-4 border-t border-white/5 flex gap-2 sm:gap-3 shrink-0">
               <button 
                 onClick={() => { setIsDrawingModalOpen(false); setImagePreview(null); }}
-                className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl text-sm transition-colors"
+                className="flex-1 py-2.5 sm:py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl text-[13px] sm:text-sm transition-colors"
               >
                 Cancel
               </button>
               <button 
                 onClick={() => handleSendReply()}
                 disabled={isSending}
-                className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl text-sm shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 transition-all"
+                className="flex-1 py-2.5 sm:py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl text-[13px] sm:text-sm shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 transition-all"
               >
-                {isSending ? 'Uploading...' : 'Upload & Send Image'} <Send size={16} />
+                {isSending ? 'Uploading...' : 'Send Image'} <Send size={14} className="sm:w-4 sm:h-4" />
               </button>
             </div>
           </div>

@@ -43,6 +43,19 @@ export async function getPendingKycRequests() {
   }
 }
 
+// For Admin: Get all verified KYC users
+export async function getVerifiedKycUsers() {
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, first_name, last_name, email, kyc_status, kyc_document_url, created_at FROM users WHERE kyc_status = 'verified' ORDER BY created_at DESC"
+    );
+    return { success: true, data: rows };
+  } catch (error) {
+    console.error("Fetch Verified KYC Error:", error);
+    return { success: false, data: [] };
+  }
+}
+
 // For Admin: Approve or Reject KYC
 export async function resolveKycRequest(userId: number, status: 'verified' | 'unverified') {
   try {
