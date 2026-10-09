@@ -9,6 +9,7 @@ import {
   Menu, X, Ban
 } from 'lucide-react';
 import { logoutUser } from '@/app/actions/auth';
+import { getUserProfile } from '@/app/actions/profile';
 
 interface SidebarProps {
   location?: string;
@@ -22,22 +23,53 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
 
+  // Dynamic User Profile State
+  const [user, setUser] = useState<{ name: string; initials: string }>({
+    name: 'Loading...',
+    initials: '...'
+  });
+
+  // Fetch logged-in user profile from Neon DB
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const data = await getUserProfile();
+        if (data) {
+          const firstName = data.first_name || '';
+          const lastName = data.last_name || '';
+          const fullName = `${firstName} ${lastName}`.trim() || data.email?.split('@')[0] || 'Trader';
+          
+          const fInitial = firstName ? firstName[0].toUpperCase() : '';
+          const lInitial = lastName ? lastName[0].toUpperCase() : '';
+          const initials = (fInitial + lInitial) || fullName[0]?.toUpperCase() || 'U';
+
+          setUser({
+            name: fullName,
+            initials: initials
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load profile in sidebar:", error);
+        setUser({ name: 'Trader', initials: 'T' });
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
   // Close sidebar on route change (for mobile)
   useEffect(() => {
     setIsOpen(false);
   }, [pathname]);
 
-  // --- NEW: Lock body scroll when mobile sidebar is open ---
+  // Lock body scroll when mobile sidebar is open
   useEffect(() => {
     if (isOpen) {
-      // Prevent background scrolling
       document.body.style.overflow = 'hidden';
     } else {
-      // Restore background scrolling
       document.body.style.overflow = 'unset';
     }
 
-    // Cleanup function in case the component unmounts while sidebar is open
     return () => {
       document.body.style.overflow = 'unset';
     };
@@ -81,7 +113,7 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
 
   return (
     <>
-      {/* MOBILE MENU TOGGLE - FIXED POSITIONING */}
+      {/* MOBILE MENU TOGGLE */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="lg:hidden fixed top-4 left-4 z-[60] p-2.5 bg-[#151924] rounded-xl border border-white/10 text-white shadow-lg backdrop-blur-md transition-transform"
@@ -106,7 +138,7 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         ${isBanned ? 'border-red-500/30 bg-red-950/10 overflow-hidden' : ''}
       `}>
-        
+
         {/* BAN BLOCKER */}
         {isBanned && (
           <div 
@@ -168,13 +200,13 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
                         <Icon size={18} className={isActive && !isBanned ? 'text-blue-400' : 'text-gray-500'} />
                         {item.label}
                       </div>
-                      
+
                       {item.badge && (
                         <span className="bg-yellow-500/20 text-yellow-500 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0">
                           {item.badge}
                         </span>
                       )}
-                      
+
                       {item.indicator && (
                         <div className={`w-2 h-2 rounded-full shrink-0 ${isBanned ? 'bg-red-900' : 'bg-blue-500'}`}></div>
                       )}
@@ -195,10 +227,12 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
 
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center font-bold text-white shadow-inner shrink-0 ${isBanned ? 'bg-red-900/50 text-red-500' : 'bg-gray-800'}`}>
-              JD
+              {user.initials}
             </div>
             <div className="min-w-0">
-              <div className={`text-sm font-bold truncate ${isBanned ? 'text-red-500 line-through' : 'text-white'}`}>John Doe</div>
+              <div className={`text-sm font-bold truncate ${isBanned ? 'text-red-500 line-through' : 'text-white'}`}>
+                {user.name}
+              </div>
               {isBanned ? (
                 <div className="text-[10px] text-red-500 flex items-center gap-1 font-bold uppercase tracking-wider mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span> Suspended
