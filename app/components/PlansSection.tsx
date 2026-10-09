@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { CheckCircle2, Zap, Crown, ArrowRight } from 'lucide-react';
 
 interface PlanCardProps {
@@ -13,7 +14,9 @@ interface PlanCardProps {
   desc: string;
   features: string[];
   buttonText: string;
+  buttonHref: string;
   highlighted?: boolean;
+  iconColor?: string;
 }
 
 function PlanCard({ 
@@ -26,82 +29,100 @@ function PlanCard({
   desc, 
   features, 
   buttonText, 
-  highlighted 
+  buttonHref,
+  highlighted,
+  iconColor = 'text-emerald-500'
 }: PlanCardProps) {
   return (
-    <div className={`p-8 rounded-3xl border flex flex-col ${highlighted ? 'bg-[#151924] border-blue-500 relative ring-1 ring-blue-500/50 shadow-[0_0_30px_-10px_rgba(37,99,235,0.2)]' : 'bg-[#151924] border-white/5'}`}>
+    <div className={`p-8 rounded-2xl border flex flex-col justify-between transition-all ${
+      highlighted 
+        ? 'bg-[#121622] border-blue-600 relative ring-1 ring-blue-600/50 shadow-[0_0_35px_-10px_rgba(37,99,235,0.25)]' 
+        : 'bg-[#121622] border-white/10 hover:border-white/20'
+    }`}>
       {highlighted && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1 uppercase tracking-wider shadow-lg">
-          <Zap size={14} fill="currentColor" />
+        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[11px] font-extrabold px-3.5 py-1 rounded-full flex items-center gap-1.5 uppercase tracking-wider shadow-md">
+          <Zap size={13} fill="currentColor" />
           Most Popular
         </div>
       )}
       
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-          {titleIcon}
-          {title}
-        </h3>
-        <span className="text-[10px] uppercase font-bold px-3 py-1 rounded-full border border-blue-500/20 text-blue-400 bg-[#1A233A]">
-          {badge}
-        </span>
-      </div>
-
-      <div className="mb-6 flex flex-col h-16 justify-center">
-        <div className="flex items-baseline gap-1">
-          <span className="text-4xl font-extrabold text-white">{price}</span>
-          {priceSub && <span className="text-sm text-gray-400 font-medium">{priceSub}</span>}
+      <div>
+        {/* Card Header */}
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+            {titleIcon}
+            {title}
+          </h3>
+          <span className="text-[11px] font-medium px-2.5 py-1 rounded-full border border-blue-500/20 text-blue-400 bg-blue-500/10">
+            {badge}
+          </span>
         </div>
-        {priceNote ? (
-          <div className="text-xs text-gray-400 mt-1 font-mono">{priceNote}</div>
-        ) : (
-          <div className="h-4"></div>
-        )}
+
+        {/* Pricing */}
+        <div className="mb-6 flex flex-col h-16 justify-center">
+          <div className="flex items-baseline gap-1">
+            <span className="text-4xl font-extrabold text-white">{price}</span>
+            {priceSub && <span className="text-sm text-gray-400 font-medium">{priceSub}</span>}
+          </div>
+          {priceNote ? (
+            <div className="text-xs text-gray-400 mt-1 font-mono">{priceNote}</div>
+          ) : (
+            <div className="h-4"></div>
+          )}
+        </div>
+
+        {/* Description */}
+        <p className="text-sm text-gray-400 mb-8 pb-8 border-b border-white/10 min-h-[4.5rem] leading-relaxed">
+          {desc}
+        </p>
+
+        {/* Features List */}
+        <ul className="space-y-4 mb-8">
+          {features.map((feature, index) => (
+            <li key={index} className="flex items-start gap-3 text-gray-300 text-sm">
+              <CheckCircle2 className={`${iconColor} flex-shrink-0 mt-0.5`} size={18} />
+              <span>{feature}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
-      <p className="text-sm text-gray-400 mb-8 pb-8 border-b border-white/10 min-h-[5rem]">
-        {desc}
-      </p>
-
-      <ul className="space-y-4 mb-8 flex-1">
-        {features.map((f, i) => (
-          <li key={i} className="flex items-start gap-3 text-gray-300 text-sm">
-            <CheckCircle2 className="text-green-500 flex-shrink-0 mt-0.5" size={18} />
-            <span>{f}</span>
-          </li>
-        ))}
-      </ul>
-
-      <button className={`w-full py-3.5 px-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
-        highlighted 
-          ? 'bg-blue-600 hover:bg-blue-500 text-white' 
-          : 'bg-transparent border border-white/10 hover:bg-white/5 text-white'
-      }`}>
+      {/* Action Button Link */}
+      <Link 
+        href={buttonHref}
+        className={`w-full py-3.5 px-4 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm ${
+          highlighted 
+            ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20' 
+            : 'bg-[#1C2230] hover:bg-[#252C3D] text-white border border-white/10'
+        }`}
+      >
         {buttonText}
-        <ArrowRight size={18} />
-      </button>
+        <ArrowRight size={16} />
+      </Link>
     </div>
   );
 }
 
 export default function PlansSection() {
-  const [isAnnual, setIsAnnual] = useState(false);
+  const [isAnnual, setIsAnnual] = useState(true);
 
   return (
-    <section id="plans" className="py-24 px-6 max-w-6xl mx-auto font-sans bg-[#0B0E14]">
-      {/* Header Section */}
-      <div className="text-center mb-12">
-        <h2 className="text-5xl font-extrabold text-white mb-6">Transparent Pricing.</h2>
-        <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+    <section id="plans" className="py-16 px-4 md:px-6 max-w-7xl mx-auto font-sans">
+      {/* Section Header */}
+      <div className="text-center mb-10 max-w-3xl mx-auto">
+        <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-4 tracking-tight">
+          Transparent Pricing.
+        </h2>
+        <p className="text-gray-400 text-base md:text-lg leading-relaxed">
           Zero commission on standard asset classes. Choose the infrastructure tier that matches 
           your trading volume and strategy requirements.
         </p>
       </div>
 
       {/* Billing Toggle */}
-      <div className="flex items-center justify-center p-1.5 bg-[#151924] rounded-full border border-white/5 mx-auto w-fit mb-16">
+      <div className="flex items-center justify-center p-1.5 bg-[#121622] rounded-full border border-white/10 mx-auto w-fit mb-12">
         <button
-          className={`px-6 py-2.5 rounded-full text-sm font-semibold transition-all ${
+          className={`px-6 py-2 rounded-full text-sm font-semibold transition-all ${
             !isAnnual ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white'
           }`}
           onClick={() => setIsAnnual(false)}
@@ -109,20 +130,20 @@ export default function PlansSection() {
           Monthly Billing
         </button>
         <button
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all ${
+          className={`flex items-center gap-2 px-6 py-2 rounded-full text-sm font-semibold transition-all ${
             isAnnual ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white'
           }`}
           onClick={() => setIsAnnual(true)}
         >
           Annual Billing 
-          <span className="bg-[#10B981]/20 text-[#10B981] text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider">
+          <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider">
             Save 20%
           </span>
         </button>
       </div>
 
-      {/* Pricing Cards */}
-      <div className="grid md:grid-cols-3 gap-6">
+      {/* Pricing Grid */}
+      <div className="grid md:grid-cols-3 gap-6 items-stretch">
         <PlanCard 
           title="Retail" 
           badge="Standard"
@@ -136,11 +157,13 @@ export default function PlansSection() {
             'Basic portfolio analytics & logs'
           ]} 
           buttonText="Start Free Trading"
+          buttonHref="/dashboard"
+          iconColor="text-emerald-500"
         />
         
         <PlanCard 
           title="Pro Terminal"
-          titleIcon={<Crown className="text-yellow-500" size={24} fill="currentColor" />}
+          titleIcon={<Crown className="text-amber-400" size={22} fill="currentColor" />}
           badge="High Speed"
           price={isAnnual ? "$80" : "$100"}
           priceSub="/month"
@@ -154,7 +177,9 @@ export default function PlansSection() {
             '500 req/min High-rate API limit'
           ]} 
           buttonText="Upgrade to Pro"
+          buttonHref="/dashboard/upgrade"
           highlighted 
+          iconColor="text-blue-500"
         />
         
         <PlanCard 
@@ -170,6 +195,8 @@ export default function PlansSection() {
             '24/7 Priority VIP Account Officer'
           ]} 
           buttonText="Contact Desk"
+          buttonHref="mailto:contact@citadel.com?subject=Enterprise%20Advisor%20Inquiry"
+          iconColor="text-emerald-500"
         />
       </div>
     </section>

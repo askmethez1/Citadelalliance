@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Wallet, Check, X, Save, Edit3, Link as LinkIcon } from 'lucide-react';
+import { Wallet, Check, X, Save, Link as LinkIcon } from 'lucide-react';
 import { 
   getPendingTransactionsAdmin, 
   approveTransactionAdmin, 
@@ -22,6 +22,7 @@ export default function AdminDepositsPage() {
     BTC: '',
     ETH: '',
     USDT_TRC20: '',
+    SOL: '',
   });
 
   const [modalConfig, setModalConfig] = useState<{ isOpen: boolean; title?: string; message: string; type: ModalType; }>({
@@ -32,18 +33,23 @@ export default function AdminDepositsPage() {
     setModalConfig({ isOpen: true, message, type, title });
   };
 
-  // Fetch pending transactions & system addresses from Neon DB
   const loadData = async () => {
     setIsLoading(true);
     try {
       const [pData, sysAddresses] = await Promise.all([
         getPendingTransactionsAdmin(),
-        getSystemAddresses() // New function to fetch addresses
+        getSystemAddresses()
       ]);
       
       setPendingTxs(pData || []);
       if (sysAddresses) {
-        setAddresses(sysAddresses);
+        const typedAddresses = sysAddresses as any;
+        setAddresses({
+          BTC: typedAddresses.BTC || '',
+          ETH: typedAddresses.ETH || '',
+          USDT_TRC20: typedAddresses.USDT_TRC20 || '',
+          SOL: typedAddresses.SOL || '',
+        });
       }
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -110,11 +116,11 @@ export default function AdminDepositsPage() {
         </div>
 
         <form onSubmit={handleSaveAddresses} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500">₿</div> Bitcoin (BTC)
+                <div className="w-5 h-5 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500 font-bold">₿</div> Bitcoin (BTC)
               </label>
               <input 
                 type="text" 
@@ -127,7 +133,7 @@ export default function AdminDepositsPage() {
 
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">Ξ</div> Ethereum (ERC20)
+                <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold">Ξ</div> Ethereum (ERC20)
               </label>
               <input 
                 type="text" 
@@ -140,13 +146,26 @@ export default function AdminDepositsPage() {
 
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center text-green-500">$</div> USDT (TRC20)
+                <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 font-bold">$</div> USDT (TRC20)
               </label>
               <input 
                 type="text" 
                 value={addresses.USDT_TRC20}
                 onChange={(e) => setAddresses({...addresses, USDT_TRC20: e.target.value})}
                 placeholder="T..."
+                className="w-full bg-[#0B0E14] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold">◎</div> Solana (SOL)
+              </label>
+              <input 
+                type="text" 
+                value={addresses.SOL}
+                onChange={(e) => setAddresses({...addresses, SOL: e.target.value})}
+                placeholder="Solana address..."
                 className="w-full bg-[#0B0E14] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500 font-mono"
               />
             </div>

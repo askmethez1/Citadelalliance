@@ -11,6 +11,10 @@ import { getUserProfile } from '@/app/actions/profile';
 import { Crown, CheckCircle2, Loader2, ArrowRight, Wallet, Check } from 'lucide-react';
 import Link from 'next/link';
 
+// Helper to safely check truthiness across strings, booleans, and numbers
+const checkIsPro = (val: any) => val === true || String(val).toLowerCase() === 'true' || val === 1;
+const checkIsAdmin = (p: any) => p?.role === 'admin' || checkIsPro(p?.isAdmin);
+
 export default function UpgradePage() {
   const router = useRouter();
   const [sidebarTab, setSidebarTab] = useState('upgrade');
@@ -22,32 +26,51 @@ export default function UpgradePage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAnnual, setIsAnnual] = useState(true); 
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(true);
   
   const [modalConfig, setModalConfig] = useState<{ isOpen: boolean; title?: string; message: string; type: ModalType; }>({
     isOpen: false, message: '', type: 'info'
   });
 
   useEffect(() => {
-    getUserProfile().then(p => setUserProfile(p));
+    getUserProfile().then((p: any) => {
+      setUserProfile(p);
+
+      // 1. If Admin -> Hard redirect to admin dashboard
+      if (checkIsAdmin(p)) {
+        window.location.href = '/admin/dashboard';
+        return;
+      }
+
+      // 2. If already paid / active Pro subscription -> Hard redirect immediately to Copy Trading
+      if (checkIsPro(p?.isPro)) {
+        window.location.href = '/dashboard/copy-trading';
+        return;
+      }
+
+      setIsCheckingAccess(false);
+    }).catch((err) => {
+      console.error("Failed to verify access:", err);
+      setIsCheckingAccess(false);
+    });
   }, []);
 
   const currentPlan = userProfile?.proPlanType?.toLowerCase();
-  const isPro = userProfile?.isPro;
+  const isPro = checkIsPro(userProfile?.isPro);
 
   // Determine dynamic cost
   let PRO_COST = isAnnual ? 960 : 100;
   let upgradeLabel = "Pro Terminal Access";
 
-  // Prorated upgrade math: If they are on monthly, subtract the $100 they already paid from the yearly cost
   if (isPro && currentPlan === 'monthly' && isAnnual) {
     PRO_COST = 860;
     upgradeLabel = "Upgrade to Annual (Prorated: -$100)";
   }
 
-  // Prevent paying for a plan they already have
   const isAlreadyOnSelectedPlan = 
     (isPro && currentPlan === 'monthly' && !isAnnual) || 
-    (isPro && currentPlan === 'annual' && isAnnual);
+    (isPro && currentPlan === 'annual' && isAnnual) ||
+    (isPro && !currentPlan); // Catch-all if plan type is missing but they are pro
 
   const canAfford = realBalance >= PRO_COST;
 
@@ -59,24 +82,34 @@ export default function UpgradePage() {
     if (!canAfford || isAlreadyOnSelectedPlan) return;
     
     setIsProcessing(true);
-    // Pass the calculated amount and plan type to the backend
     const res = await upgradeToProPlan(PRO_COST, isAnnual ? 'annual' : 'monthly');
     
     if (res.success) {
       if (walletEngine.refreshWallet) walletEngine.refreshWallet();
       showAlert("Payment successful! Redirecting...", "success", "Welcome to Pro");
       
-      // Update local profile state immediately so buttons disable
       setUserProfile((prev: any) => ({ ...prev, isPro: true, proPlanType: isAnnual ? 'annual' : 'monthly' }));
 
+      // Use a hard location replace to bypass any Next.js soft-routing cache hangs
       setTimeout(() => {
-        router.push('/dashboard/copy-trading');
-      }, 2000);
+        window.location.href = '/dashboard/copy-trading';
+      }, 1500);
     } else {
       showAlert(res.message, "error", "Payment Failed");
+      setIsProcessing(false);
     }
-    setIsProcessing(false);
   };
+
+  if (isCheckingAccess) {
+    return (
+      <div className="min-h-screen bg-[#0B0E14] text-gray-300 font-sans flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 size={32} className="animate-spin text-blue-500" />
+          <p className="text-sm text-gray-400">Verifying membership status...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0B0E14] text-gray-300 font-sans flex selection:bg-blue-500/30">
@@ -116,7 +149,7 @@ export default function UpgradePage() {
                 <div className="flex flex-col">
                   <span className="text-white text-sm font-bold">{upgradeLabel}</span>
                   <span className="text-gray-500 text-xs">
-                    {isAnnual ? (isPro && currentPlan === 'monthly' ? 'Billed once at prorated rate' : 'Billed at $960 per year') : 'Billed at $100 per month'}
+                    {isAnnual ? (isPro && currentPlan === 'monthly' ? 'Billed once at prorated rate' :'Billed at $960 per year') : 'Billed at $100 per month'}
                   </span>
                 </div>
                 <span className="text-white font-mono font-bold text-xl">${PRO_COST.toFixed(2)}</span>
@@ -138,9 +171,12 @@ export default function UpgradePage() {
 
             <div className="relative z-10">
               {isAlreadyOnSelectedPlan ? (
-                 <button disabled className="w-full py-4 bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl font-bold flex items-center justify-center gap-2">
-                   <Check size={18} /> Active Subscription
-                 </button>
+                <button 
+                  onClick={() => { window.location.href = '/dashboard/copy-trading'; }}
+                  className="w-full py-4 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Check size={18} /> Active Subscription — Go to Copy Trading
+                </button>
               ) : (
                 !isWalletLoading && (
                   canAfford ? (

@@ -195,7 +195,7 @@ export async function approveTransactionAdmin(txId: number) {
   try {
     await client.query('BEGIN');
 
-    const txRes = await client.query('SELECT user_id, amount, status FROM transactions WHERE id = $1',[txId]);
+    const txRes = await client.query('SELECT user_id, amount, status FROM transactions WHERE id = $1', [txId]);
     if (txRes.rows.length === 0 || txRes.rows[0].status !== 'Pending') {
       await client.query('ROLLBACK');
       return { success: false, message: 'Transaction not found or already processed.' };
@@ -232,7 +232,6 @@ export async function rejectTransactionAdmin(txId: number) {
 
 export async function getProSubscriptionsAdmin() {
   try {
-    // Check if the is_pro column exists before querying to prevent crashes
     const checkCol = await pool.query(
       `SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='is_pro'`
     );
@@ -315,29 +314,31 @@ export async function createSignalAdmin(data: {
 export async function getSystemAddresses() {
   try {
     const { rows } = await pool.query(
-      `SELECT key, value FROM system_settings WHERE key IN ('address_BTC', 'address_ETH', 'address_USDT')`
+      `SELECT key, value FROM system_settings WHERE key IN ('address_BTC', 'address_ETH', 'address_USDT', 'address_SOL')`
     );
-    const addresses = { BTC: '', ETH: '', USDT_TRC20: '' };
+    const addresses = { BTC: '', ETH: '', USDT_TRC20: '', SOL: '' };
     
     rows.forEach(record => {
-      if (record.key === 'address_BTC') addresses.BTC = record.value;
-      if (record.key === 'address_ETH') addresses.ETH = record.value;
-      if (record.key === 'address_USDT') addresses.USDT_TRC20 = record.value;
+      if (record.key === 'address_BTC') addresses.BTC = record.value || '';
+      if (record.key === 'address_ETH') addresses.ETH = record.value || '';
+      if (record.key === 'address_USDT') addresses.USDT_TRC20 = record.value || '';
+      if (record.key === 'address_SOL') addresses.SOL = record.value || '';
     });
     
     return addresses;
   } catch (error) {
     console.error("Error fetching system addresses:", error);
-    return { BTC: '', ETH: '', USDT_TRC20: '' };
+    return { BTC: '', ETH: '', USDT_TRC20: '', SOL: '' };
   }
 }
 
-export async function updateSystemAddress(addresses: { BTC: string, ETH: string, USDT_TRC20: string }){
+export async function updateSystemAddress(addresses: { BTC?: string; ETH?: string; USDT_TRC20?: string; SOL?: string }) {
   try {
     const keys = [
-      { key: 'address_BTC', value: addresses.BTC },
-      { key: 'address_ETH', value: addresses.ETH },
-      { key: 'address_USDT', value: addresses.USDT_TRC20 }
+      { key: 'address_BTC', value: addresses.BTC || '' },
+      { key: 'address_ETH', value: addresses.ETH || '' },
+      { key: 'address_USDT', value: addresses.USDT_TRC20 || '' },
+      { key: 'address_SOL', value: addresses.SOL || '' }
     ];
 
     for (const item of keys) {

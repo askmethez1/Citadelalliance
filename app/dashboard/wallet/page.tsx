@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar';
 import TopHeader from '../components/TopHeader';
 import DashboardSkeleton from '../components/DashboardSkeleton';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
-import Pagination from '@/app/components/ui/Pagination'; // Imported Pagination
+import Pagination from '@/app/components/ui/Pagination';
 import { 
   Wallet, ArrowDownLeft, ArrowUpRight, Copy, Check, 
   ShieldCheck, AlertCircle, History, Loader2, Gift 
@@ -14,8 +14,8 @@ import {
 import { 
   getTransactionHistory, 
   createWithdrawalRequest, 
-  getWalletOverview,        // <-- Added
-  transferBonusToReal,      // <-- Added
+  getWalletOverview, 
+  transferBonusToReal, 
   TransactionRecord 
 } from '@/app/actions/wallet';
 import { getUserProfile } from '@/app/actions/profile';
@@ -34,20 +34,20 @@ export default function WalletPage() {
   const [sidebarTab, setSidebarTab] = useState('wallet');
   const [activeAction, setActiveAction] = useState<TabType>('deposit');
   
-  // Hook into Central Balance Engine
+  // Central Balance Engine
   const { balance, liveEquity, lockedMargin, marginUtilized, isWalletLoading, refreshWallet } = useWalletEngine();
 
   // Local Page States
   const [isLoading, setIsLoading] = useState(true);
   const [userCountry, setUserCountry] = useState<string>('Nigeria');
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
-  const [bonusBalance, setBonusBalance] = useState<number>(0); // <-- Added Bonus State
-  const [isTransferringBonus, setIsTransferringBonus] = useState(false); // <-- Transfer State
+  const [bonusBalance, setBonusBalance] = useState<number>(0);
+  const [isTransferringBonus, setIsTransferringBonus] = useState(false);
 
-  // Database System Addresses
-  const [sysAddresses, setSysAddresses] = useState({ BTC: '', ETH: '', USDT_TRC20: '' });
+  // Database System Addresses - Added SOL
+  const [sysAddresses, setSysAddresses] = useState({ BTC: '', ETH: '', USDT_TRC20: '', SOL: '' });
 
-  // Selection & Form States
+  // Form States
   const [selectedAssetSymbol, setSelectedAssetSymbol] = useState<string>('USDT');
   const [selectedNetworkIndex, setSelectedNetworkIndex] = useState<number>(0);
   const [copied, setCopied] = useState(false);
@@ -77,14 +77,19 @@ export default function WalletPage() {
       getUserProfile(),
       getTransactionHistory(),
       getSystemAddresses(),
-      getWalletOverview() // <-- Fetch Bonus Data
+      getWalletOverview()
     ]);
 
     if (profile?.country) {
       setUserCountry(profile.country);
     }
     if (addresses) {
-      setSysAddresses(addresses);
+      setSysAddresses({
+        BTC: addresses.BTC || '',
+        ETH: addresses.ETH || '',
+        USDT_TRC20: addresses.USDT_TRC20 || '',
+        SOL: addresses.SOL || '',
+      });
     }
     if (walletData) {
       setBonusBalance(walletData.bonusBalance);
@@ -102,7 +107,6 @@ export default function WalletPage() {
     setModalConfig({ isOpen: true, message, type, title });
   };
 
-  // --- BONUS TRANSFER HANDLER ---
   const handleTransferBonus = async () => {
     if (bonusBalance < 200) {
       showAlert(`Bonus must be traded to reach at least $200.00 to unlock withdrawal. Current bonus: $${bonusBalance.toFixed(2)}.`, "warning", "Unlock Condition Not Met");
@@ -115,14 +119,14 @@ export default function WalletPage() {
 
     if (res.success) {
       showAlert(res.message, "success", "Bonus Unlocked!");
-      loadData(); // Refresh bonus state and transactions
-      refreshWallet(); // Refresh global available balance
+      loadData();
+      refreshWallet();
     } else {
       showAlert(res.message, "error", "Transfer Failed");
     }
   };
 
-  // Dynamically build the deposit methods based on the admin's database configuration
+  // Deposit methods including Solana
   const DEPOSIT_METHODS: DepositMethod[] = [
     {
       symbol: "USDT",
@@ -144,10 +148,16 @@ export default function WalletPage() {
       networks: [
         { name: "ERC20 (Ethereum)", address: sysAddresses.ETH || "Contact Support for Address", minDeposit: "0.01 ETH" }
       ]
+    },
+    {
+      symbol: "SOL",
+      name: "Solana",
+      networks: [
+        { name: "Solana Network", address: sysAddresses.SOL || "Contact Support for Address", minDeposit: "0.05 SOL" }
+      ]
     }
   ];
 
-  // Resolve current active asset and network
   const activeAsset = DEPOSIT_METHODS.find(m => m.symbol === selectedAssetSymbol) || DEPOSIT_METHODS[0];
   const activeNetwork = activeAsset.networks[selectedNetworkIndex] || activeAsset.networks[0];
 
@@ -192,21 +202,19 @@ export default function WalletPage() {
       setWithdrawAddress('');
       setWithdrawAmount('');
       showAlert(result.message, "success", "Withdrawal Queued");
-      loadData(); // Refresh transaction log
-      refreshWallet(); // Instantly update global balance across the dashboard
-      setCurrentPage(1); // Automatically jump back to page 1 to see the new transaction
+      loadData();
+      refreshWallet();
+      setCurrentPage(1);
     } else {
       showAlert(result.message, "error", "Transaction Failed");
     }
   };
 
-  // --- Pagination Logic Calculations ---
   const totalPages = Math.ceil(transactions.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentTransactions = transactions.slice(indexOfFirstItem, indexOfLastItem);
 
-  // Render Skeleton until both the profile data and wallet engine have initialized
   if (isLoading || isWalletLoading) {
     return <DashboardSkeleton activeTab={sidebarTab} location={userCountry} />;
   }
@@ -253,9 +261,8 @@ export default function WalletPage() {
               </div>
             </div>
 
-            {/* SYNCHRONIZED BALANCE CARDS - Now 4 Columns to include Bonus */}
+            {/* BALANCE CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Net Equity */}
               <div className="bg-[#151924] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
                 <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Total Net Equity</div>
                 <div className="text-2xl font-mono font-extrabold text-white mb-2">
@@ -264,7 +271,6 @@ export default function WalletPage() {
                 <div className="text-[10px] text-gray-400">Balance + Open Margin + Live PnL</div>
               </div>
 
-              {/* Available Balance */}
               <div className="bg-[#151924] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
                 <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Available Balance</div>
                 <div className="text-2xl font-mono font-extrabold text-blue-400 mb-2">
@@ -273,7 +279,6 @@ export default function WalletPage() {
                 <div className="text-[10px] text-gray-400">Ready for withdrawal or trading</div>
               </div>
 
-              {/* Trading Bonus Card (NEW) */}
               <div className="bg-[#151924] border border-purple-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-2xl group-hover:bg-purple-500/10 transition-colors"></div>
                 <div className="text-[11px] font-bold text-purple-500/70 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -297,7 +302,6 @@ export default function WalletPage() {
                 </div>
               </div>
 
-              {/* In Open Positions */}
               <div className="bg-[#151924] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
                 <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">In Open Positions</div>
                 <div className="text-2xl font-mono font-extrabold text-gray-400 mb-2">
@@ -322,7 +326,7 @@ export default function WalletPage() {
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1. Select Asset</label>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {DEPOSIT_METHODS.map((method) => (
                           <button
                             key={method.symbol}
@@ -505,11 +509,11 @@ export default function WalletPage() {
 
             </div>
 
-            {/* REAL TRANSACTION TABLE */}
+            {/* TRANSACTION TABLE */}
             <div className="bg-[#151924] border border-white/5 rounded-3xl p-6 sm:p-8 shadow-xl">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <History size={20} className="text-blue-400" />  Transaction History
+                  <History size={20} className="text-blue-400" /> Transaction History
                 </h3>
               </div>
 
@@ -560,7 +564,6 @@ export default function WalletPage() {
                       </tbody>
                     </table>
 
-                    {/* PAGINATION COMPONENT */}
                     {totalPages > 1 && (
                       <div className="mt-6 pt-4 border-t border-white/5">
                         <Pagination 
