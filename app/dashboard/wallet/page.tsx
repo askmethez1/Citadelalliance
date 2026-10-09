@@ -44,7 +44,7 @@ export default function WalletPage() {
   const [bonusBalance, setBonusBalance] = useState<number>(0);
   const [isTransferringBonus, setIsTransferringBonus] = useState(false);
 
-  // Database System Addresses - Added SOL
+  // Database System Addresses 
   const [sysAddresses, setSysAddresses] = useState({ BTC: '', ETH: '', USDT_TRC20: '', SOL: '' });
 
   // Form States
@@ -126,7 +126,6 @@ export default function WalletPage() {
     }
   };
 
-  // Deposit methods including Solana
   const DEPOSIT_METHODS: DepositMethod[] = [
     {
       symbol: "USDT",
@@ -182,8 +181,15 @@ export default function WalletPage() {
       return;
     }
 
+    // NEW LOGIC: Enforce $100 Minimum
+    if (amountNum < 100) {
+      showAlert("The minimum withdrawal amount is $100.00.", "warning", "Minimum Withdrawal Limit");
+      return;
+    }
+
+    // NEW LOGIC: Enforce Real Balance Only
     if (amountNum > balance) {
-      showAlert("Insufficient available account balance. Note: Locked margin or bonus funds cannot be withdrawn.", "error", "Insufficient Funds");
+      showAlert(`Insufficient real available balance. You only have $${balance.toFixed(2)} in real funds available for withdrawal. Bonus funds must be traded to unlock.`, "error", "Insufficient Funds");
       return;
     }
 
@@ -272,7 +278,7 @@ export default function WalletPage() {
               </div>
 
               <div className="bg-[#151924] border border-white/5 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Available Balance</div>
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Available Real Balance</div>
                 <div className="text-2xl font-mono font-extrabold text-blue-400 mb-2">
                   ${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
@@ -407,7 +413,7 @@ export default function WalletPage() {
                       <div className="space-y-2">
                         <div className="flex justify-between items-center text-xs">
                           <label className="font-bold text-gray-500 uppercase">Select Asset</label>
-                          <span className="text-gray-400">Available: <b className="text-white font-mono">${balance.toFixed(2)}</b></span>
+                          <span className="text-gray-400">Available Real Fund: <b className="text-white font-mono">${balance.toFixed(2)}</b></span>
                         </div>
                         <select 
                           value={activeAsset.symbol}
@@ -466,7 +472,7 @@ export default function WalletPage() {
                           <input 
                             type="number" 
                             step="any"
-                            placeholder="0.00"
+                            placeholder="100.00"
                             value={withdrawAmount}
                             onChange={(e) => setWithdrawAmount(e.target.value)}
                             className="w-full bg-[#0B0E14] border border-white/10 rounded-xl px-4 py-3 pr-16 text-white font-mono text-sm focus:outline-none focus:border-blue-500"
@@ -474,12 +480,15 @@ export default function WalletPage() {
                           />
                           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">USD</span>
                         </div>
+                        <p className="text-[10px] text-yellow-500/80 font-bold tracking-wide">
+                          * Minimum withdrawal amount is $100.00.
+                        </p>
                       </div>
 
                       <button 
                         type="submit"
                         disabled={isSubmitting}
-                        className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                        className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 mt-4"
                       >
                         {isSubmitting ? (
                           <>

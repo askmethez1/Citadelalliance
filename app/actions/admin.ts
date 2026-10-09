@@ -11,14 +11,12 @@ const pool = new Pool({
 
 export async function getAllUsersAdmin() {
   try {
-    // 1. Fetch all users (including Pro tracking columns if they exist, mapped safely)
     const { rows: users } = await pool.query(
       `SELECT id, email, first_name, last_name, balance, country, role, is_banned, created_at, 
               (SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='is_pro') as has_pro
        FROM users ORDER BY id ASC`
     );
 
-    // Dynamic query for Pro columns to avoid crashing if columns aren't created yet
     const hasProColumns = users.length > 0 && users[0].has_pro !== null;
     let fullUsers = users;
     
@@ -30,7 +28,6 @@ export async function getAllUsersAdmin() {
        });
     }
 
-    // 2. Fetch all open trades safely
     let openTrades: any[] = [];
     try {
       const { rows: trades } = await pool.query(
@@ -41,7 +38,6 @@ export async function getAllUsersAdmin() {
       console.warn("Warning: Could not fetch open trades:", e);
     }
 
-    // 3. Map users and attach their active trades 
     return fullUsers.map((r: any) => {
       const userIdStr = String(r.id);
 
@@ -90,12 +86,38 @@ export async function getAllUsersAdmin() {
 }
 
 export async function updateUserBalanceAdmin(userId: number, newBalance: number) {
+  const client = await pool.connect();
   try {
-    await pool.query('UPDATE users SET balance = $1 WHERE id = $2', [newBalance.toFixed(2), userId]);
+    await client.query('BEGIN');
+    
+    const { rows } = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
+    const oldBalance = parseFloat(rows[0]?.balance || '0');
+    const diff = newBalance - oldBalance;
+
+    await client.query('UPDATE users SET balance = $1 WHERE id = $2', [newBalance.toFixed(2), userId]);
+
+    if (diff >= 0.01) {
+        await client.query(
+          `INSERT INTO transactions (user_id, type, asset, amount, status, network, created_at)
+           VALUES ($1, 'Deposit', 'USD', $2, 'Completed', 'Admin Manual Edit', NOW())`,
+          [userId, `+$${diff.toFixed(2)}`]
+        );
+    } else if (diff <= -0.01) {
+        await client.query(
+          `INSERT INTO transactions (user_id, type, asset, amount, status, network, created_at)
+           VALUES ($1, 'Withdrawal', 'USD', $2, 'Completed', 'Admin Manual Edit', NOW())`,
+          [userId, `-$${Math.abs(diff).toFixed(2)}`]
+        );
+    }
+
+    await client.query('COMMIT');
     return { success: true, message: `Balance updated to $${newBalance.toFixed(2)}` };
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error updating balance:', error);
     return { success: false, message: 'Failed to update user balance.' };
+  } finally {
+    client.release();
   }
 }
 
@@ -104,31 +126,29 @@ export async function creditUserDepositAdmin(userId: number, amount: number, not
     return { success: false, message: 'Invalid credit amount.' };
   }
 
+  const client = await pool.connect();
   try {
-    await pool.query(
+    await client.query('BEGIN');
+
+    await client.query(
       'UPDATE users SET balance = COALESCE(balance, 0) + $1 WHERE id = $2', 
       [amount, userId]
     );
 
-    await pool.query(
-      `INSERT INTO activity_logs (user_id, action, metadata) VALUES ($1, 'DEPOSIT', $2)`,
-      [userId, note || `System credit: $${amount.toFixed(2)}`]
+    await client.query(
+      `INSERT INTO transactions (user_id, type, asset, amount, status, network, created_at)
+       VALUES ($1, 'Deposit', 'USD', $2, 'Completed', $3, NOW())`,
+      [userId, `+$${amount.toFixed(2)}`, note || 'System Admin Credit']
     );
 
-    try {
-      await pool.query(
-        `INSERT INTO transactions (user_id, type, asset, amount, status, created_at)
-         VALUES ($1, 'Deposit', 'USDT', $2, 'Completed', NOW())`,
-        [userId, `+$${amount.toFixed(2)}`]
-      );
-    } catch (e) {
-      console.warn("Transactions insert skipped due to schema constraints, but balance was credited.");
-    }
-
+    await client.query('COMMIT');
     return { success: true, message: `Credited $${amount.toFixed(2)} to user account.` };
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error crediting user:', error);
     return { success: false, message: 'Failed to credit account. Database error.' };
+  } finally {
+    client.release();
   }
 }
 
@@ -166,7 +186,7 @@ export async function updateUserRoleAdmin(userId: number, newRole: string) {
 export async function getPendingTransactionsAdmin() {
   try {
     const { rows } = await pool.query(
-      `SELECT t.id, t.user_id, u.email, u.first_name, u.last_name, t.type, t.asset, t.amount, t.status, t.created_at 
+      `SELECT t.id, t.user_id, u.email, u.first_name, u.last_name, t.type, t.asset, t.amount, t.status, t.created_at, t.destination_address, t.network 
        FROM transactions t
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'Pending'
@@ -182,10 +202,43 @@ export async function getPendingTransactionsAdmin() {
       asset: r.asset,
       amount: r.amount,
       status: r.status,
-      createdAt: r.created_at
+      destinationAddress: r.destination_address,
+      network: r.network,
+      createdAt: r.created_at ? new Date(r.created_at).toLocaleString() : 'N/A'
     }));
   } catch (error) {
     console.error('Error fetching pending transactions:', error);
+    return [];
+  }
+}
+
+// --- COMPLETED TRANSACTIONS (FOR ADMIN RECORDS) ---
+export async function getCompletedTransactionsAdmin() {
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.id, t.user_id, u.email, u.first_name, u.last_name, t.type, t.asset, t.amount, t.status, t.created_at, t.destination_address, t.network 
+       FROM transactions t
+       JOIN users u ON t.user_id = u.id
+       WHERE t.status != 'Pending'
+       ORDER BY t.created_at DESC
+       LIMIT 100`
+    );
+    return rows.map(r => ({
+      id: r.id,
+      userId: r.user_id,
+      email: r.email,
+      firstName: r.first_name,
+      lastName: r.last_name,
+      type: r.type,
+      asset: r.asset,
+      amount: r.amount,
+      status: r.status,
+      destinationAddress: r.destination_address, // <-- NOW FETCHING ADDRESS HERE
+      network: r.network,
+      createdAt: r.created_at ? new Date(r.created_at).toLocaleString() : 'N/A'
+    }));
+  } catch (error) {
+    console.error('Error fetching completed txs:', error);
     return [];
   }
 }
@@ -260,7 +313,7 @@ export async function getProSubscriptionsAdmin() {
         email: r.email,
         planType: isAnnual ? 'Annual' : 'Monthly',
         amount: isAnnual ? 960 : 100,
-        startDate: new Date(r.created_at).toISOString().split('T')[0],
+        startDate: r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : 'N/A',
         expiryDate: expiryDate.toISOString().split('T')[0],
         status: isActive ? 'Active' : 'Expired'
       };

@@ -15,7 +15,7 @@ import {
   LogOut,
   MapPin,
   MessageSquare,
-  Crown, // <-- Added the Crown icon for the Subscriptions tab
+  Crown,
   Menu,
   X
 } from 'lucide-react';
@@ -85,9 +85,10 @@ export default function AdminSidebar({ location }: AdminSidebarProps) {
       )}
 
       {/* SIDEBAR CONTAINER */}
+      {/* FIX: Replaced lg:static lg:min-h-full with lg:sticky lg:top-0 lg:h-screen */}
       <aside className={`
         fixed inset-y-0 left-0 z-[50] w-64 bg-[#0B0E14] border-r border-white/5 flex flex-col shrink-0
-        lg:static lg:h-screen lg:min-h-full
+        lg:sticky lg:top-0 lg:h-screen
         transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
