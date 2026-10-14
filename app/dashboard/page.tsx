@@ -16,11 +16,10 @@ import RecentTrades from './components/RecentTrades';
 import RecentActivity from './components/RecentActivity';
 import DashboardSkeleton from './components/DashboardSkeleton';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
-import UserSignalsView from './components/UserSignalsView';
 
 import { getUserRole, checkBanStatus, logoutUser } from '@/app/actions/auth';
 import { getWalletOverview, claimSignupBonus } from '@/app/actions/wallet';
-import { getUserProfile } from '@/app/actions/profile'; // <-- Fetches user profile for Pro status
+import { getUserProfile } from '@/app/actions/profile';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 import { usePricingEngine } from '@/app/hooks/usePricingEngine';
 
@@ -47,9 +46,13 @@ export default function DashboardPage() {
   const [hasClaimedBonus, setHasClaimedBonus] = useState(false);
   const [localBonusBalance, setLocalBonusBalance] = useState(0);
   const [isClaiming, setIsClaiming] = useState(false);
-  const [isProUser, setIsProUser] = useState(false); // <-- Tracks Pro Status
+  const [isProUser, setIsProUser] = useState(false);
   
-  const [modalConfig, setModalConfig] = useState<{isOpen: boolean; title?: string; message: string; type: ModalType}>({ isOpen: false, message: '', type: 'info' });
+  const [modalConfig, setModalConfig] = useState<{isOpen: boolean; title?: string; message: string; type: ModalType}>({ 
+    isOpen: false, 
+    message: '', 
+    type: 'info' 
+  });
   const showAlert = (message: string, type: ModalType = 'info', title?: string) => setModalConfig({ isOpen: true, message, type, title });
 
   // Hook into Wallet & Pricing Engines
@@ -65,7 +68,7 @@ export default function DashboardPage() {
 
   const { getLivePrice } = usePricingEngine();
 
-  // Initial Load Config (Fetches bonus & pro status from database)
+  // Initial Load Config
   useEffect(() => {
     const fetchInitialAuth = async () => {
       try {
@@ -78,14 +81,15 @@ export default function DashboardPage() {
           setIsProUser(true);
         }
 
-        // Fetch user's wallet overview to know if they already claimed the bonus
+        // Fetch user's wallet overview to check bonus status
         const walletData = await getWalletOverview();
         if (walletData) {
           setHasClaimedBonus(walletData.hasClaimedBonus);
           setLocalBonusBalance(walletData.bonusBalance);
         }
 
-        fetch('https://ipapi.co/json/').then(res => res.ok ? res.json() : null)
+        fetch('https://ipapi.co/json/')
+          .then(res => res.ok ? res.json() : null)
           .then(data => data && setLocation(`${data.city}, ${data.country_name}`))
           .catch(() => setLocation('Location Unavailable'));
       } finally {
@@ -103,7 +107,7 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [refreshWallet]);
 
-  // Handle claiming the bonus by saving to database
+  // Handle claiming the bonus
   const handleClaimBonus = async () => {
     if (hasClaimedBonus) return;
     setIsClaiming(true);
@@ -113,7 +117,7 @@ export default function DashboardPage() {
       if (res.success) {
         setHasClaimedBonus(true);
         setLocalBonusBalance(prev => prev + 100);
-        refreshWallet(); // Refresh engine just to be safe
+        refreshWallet();
         showAlert(res.message, 'success', 'Bonus Claimed!');
       } else {
         showAlert(res.message, 'error', 'Claim Failed');
@@ -133,10 +137,14 @@ export default function DashboardPage() {
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} location={location} isBanned={true} />
         <main className="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden">
           <div className="bg-[#151924] border border-red-500/20 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl relative z-10 mx-auto">
-            <div className="w-20 h-20 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6"><Ban size={36} className="text-red-500" /></div>
+            <div className="w-20 h-20 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Ban size={36} className="text-red-500" />
+            </div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-white mb-3">Account Suspended</h1>
             <p className="text-gray-400 text-sm mb-8">Your system access has been revoked. Contact compliance.</p>
-            <button onClick={() => logoutUser().then(() => router.push('/'))} className="w-full py-3.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-bold">Log Out</button>
+            <button onClick={() => logoutUser().then(() => router.push('/'))} className="w-full py-3.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-bold">
+              Log Out
+            </button>
           </div>
         </main>
       </div>
@@ -162,7 +170,9 @@ export default function DashboardPage() {
                   <div className="w-full rounded-2xl bg-gradient-to-r from-blue-900/40 via-blue-800/20 to-[#0B0E14] border border-blue-500/30 p-5 sm:p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative overflow-hidden">
                     <div className="absolute -right-20 -top-20 w-64 h-64 bg-blue-500/20 rounded-full blur-3xl pointer-events-none"></div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5 relative z-10 w-full lg:w-auto">
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-xl border border-blue-400/50"><Crown size={24} className="sm:w-7 sm:h-7" /></div>
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-xl border border-blue-400/50">
+                        <Crown size={24} className="sm:w-7 sm:h-7" />
+                      </div>
                       <div>
                         <div className="flex flex-wrap items-center gap-2 mb-1">
                           <h3 className="text-lg sm:text-xl font-extrabold text-white">Upgrade to Pro Terminal</h3>
@@ -248,21 +258,27 @@ export default function DashboardPage() {
                     <div className={`text-2xl sm:text-3xl font-mono font-bold mb-2 truncate ${floatingPnL >= 0 ? 'text-white' : 'text-gray-300'}`}>
                       ${liveEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
-                    <div className="text-xs flex items-center gap-1 text-gray-500"><TrendingUp size={12} className="text-green-500 shrink-0" /> Live Sync Active</div>
+                    <div className="text-xs flex items-center gap-1 text-gray-500">
+                      <TrendingUp size={12} className="text-green-500 shrink-0" /> Live Sync Active
+                    </div>
                   </div>
 
                   {/* Active Copiers */}
                   <div className="bg-[#151924] border border-white/5 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
                     <div className="text-gray-500 text-xs font-medium mb-3 uppercase tracking-wider">Active Copiers</div>
                     <div className="text-2xl sm:text-3xl font-mono font-bold text-white mb-2">{activeCopiers}</div>
-                    <Link href="/dashboard/copy-trading" className="text-xs text-blue-400 hover:text-blue-300 transition-colors inline-block mt-auto w-max">Find Masters to copy</Link>
+                    <Link href="/dashboard/copy-trading" className="text-xs text-blue-400 hover:text-blue-300 transition-colors inline-block mt-auto w-max">
+                      Find Masters to copy
+                    </Link>
                   </div>
 
                   {/* Margin Utilization */}
                   <div className="bg-[#151924] border border-white/5 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
                     <div>
                       <div className="text-gray-500 text-xs font-medium mb-3 uppercase tracking-wider">Margin Utilization</div>
-                      <div className={`text-2xl sm:text-3xl font-mono font-bold mb-2 ${marginUtilized > 80 ? 'text-red-500' : 'text-white'}`}>{marginUtilized.toFixed(1)}%</div>
+                      <div className={`text-2xl sm:text-3xl font-mono font-bold mb-2 ${marginUtilized > 80 ? 'text-red-500' : 'text-white'}`}>
+                        {marginUtilized.toFixed(1)}%
+                      </div>
                     </div>
                     <div className="w-full h-1.5 bg-white/5 rounded-full mt-3 overflow-hidden">
                       <div className={`h-full rounded-full transition-all ${marginUtilized > 80 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(marginUtilized, 100)}%` }}></div>
@@ -275,8 +291,6 @@ export default function DashboardPage() {
                 <RecentActivity location={location} />
               </>
             )}
-
-            {activeTab === 'signals' && <UserSignalsView balance={balance} refreshWallet={refreshWallet} showAlert={showAlert} />}
 
             {/* Render Static Tabs Dynamically */}
             {activeTabContent && (

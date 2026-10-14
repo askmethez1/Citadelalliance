@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LineChart, LayoutDashboard, Users, PhoneCall, Wallet,
+  LineChart, LayoutDashboard, Users, Wallet,
   CreditCard, History, MessageSquare, ShieldAlert, Settings, MapPin,
   Menu, X, Ban
 } from 'lucide-react';
@@ -82,7 +82,6 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
       items: [
         { href: '/dashboard', label: 'Pro Terminal', icon: LayoutDashboard },
         { href: '/dashboard/copy-trading', label: 'Copy Masters', icon: Users },
-        { href: '/dashboard/signals', label: 'Premium Signals', icon: PhoneCall, badge: 'Book' },
       ]
     },
     {
@@ -200,12 +199,6 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
                         <Icon size={18} className={isActive && !isBanned ? 'text-blue-400' : 'text-gray-500'} />
                         {item.label}
                       </div>
-
-                      {item.badge && (
-                        <span className="bg-yellow-500/20 text-yellow-500 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0">
-                          {item.badge}
-                        </span>
-                      )}
 
                       {item.indicator && (
                         <div className={`w-2 h-2 rounded-full shrink-0 ${isBanned ? 'bg-red-900' : 'bg-blue-500'}`}></div>
