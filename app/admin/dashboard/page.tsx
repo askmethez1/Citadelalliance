@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   ShieldAlert, RefreshCw, Loader2, UserCheck, Wallet, 
   TrendingUp, TrendingDown, Eye, X, Activity, DollarSign,
-  Briefcase, ArrowUpRight, ArrowDownRight, Award, Crown
+  Briefcase, ArrowUpRight, ArrowDownRight, Award, Crown, Copy, Clock
 } from 'lucide-react';
 
 import AdminMetrics from './components/AdminMetrics';
@@ -25,6 +25,9 @@ export interface OpenTradePosition {
   sl?: number;
   tp?: number;
   createdAt?: string;
+  openTime?: string;
+  isAiCopy?: boolean; 
+  aiMeta?: any;       
 }
 
 export interface AdminUser {
@@ -33,14 +36,14 @@ export interface AdminUser {
   email: string;
   role: string;
   isBanned?: boolean;
-  isPro?: boolean;             // <-- Added Pro Status Tracking
-  proPlanType?: string;        // <-- Added Plan Type (Monthly/Annual)
-  proExpiry?: string;          // <-- Added Expiry Date
+  isPro?: boolean;             
+  proPlanType?: string;        
+  proExpiry?: string;          
   balance: number;            
   tradingBalance: number;     
   openTrades?: OpenTradePosition[];
-  totalEquity?: number;       
-  floatingPnL?: number;       
+  totalEquity?: number;        
+  floatingPnL?: number;        
   createdAt?: string;
 }
 
@@ -51,6 +54,8 @@ export default function AdminDashboardRoot() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [pendingTxs, setPendingTxs] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+
+  const [dashboardTime, setDashboardTime] = useState<number>(Date.now());
 
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
@@ -65,6 +70,11 @@ export default function AdminDashboardRoot() {
     setModalConfig({ isOpen: true, message, type, title });
   };
 
+  useEffect(() => {
+    const timer = setInterval(() => setDashboardTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const loadData = useCallback(async (isBackgroundSync = false) => {
     if (!isBackgroundSync) setIsRefreshing(true);
     
@@ -73,7 +83,7 @@ export default function AdminDashboardRoot() {
         getAllUsersAdmin(),
         getPendingTransactionsAdmin()
       ]);
-      
+
       const sanitizedUsers: AdminUser[] = (uData || []).map((user: any) => {
         let mainBal = parseFloat(user.balance);
         if (isNaN(mainBal)) mainBal = 0;
@@ -90,18 +100,34 @@ export default function AdminDashboardRoot() {
         let activeMargin = tradeBal;
 
         openTrades.forEach((trade) => {
-          const currentPrice = getLivePrice(trade.symbol) || trade.openPrice;
-          const isLong = trade.type === 'BUY' || trade.type === 'LONG';
-          const priceDiff = isLong ? (currentPrice - trade.openPrice) : (trade.openPrice - currentPrice);
+          const dbAllocated = trade.margin || ((trade.volume * trade.openPrice) / (trade.leverage || 1));
           
-          // FIX: Volume is already (margin * leverage / openPrice). 
-          // Multiplying by leverage again squares it. Removed the duplicate multiplier.
-          const pnl = (priceDiff / trade.openPrice) * (trade.volume * trade.openPrice);
-          totalFloatingPnL += pnl;
+          let dbTimestamp = Date.now();
+          if (trade.openTime) {
+            dbTimestamp = new Date(trade.openTime).getTime();
+          } else if (trade.createdAt) {
+            dbTimestamp = new Date(trade.createdAt).getTime();
+          }
 
-          const calculatedMargin = trade.margin || ((trade.volume * trade.openPrice) / (trade.leverage || 1));
-          if (calculatedMargin && !isNaN(calculatedMargin)) {
-            activeMargin += calculatedMargin;
+          const meta = {
+            traderName: "Master Trader",
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${trade.id}`,
+            allocated: dbAllocated,
+            timestamp: dbTimestamp,
+            symbol: trade.symbol
+          };
+
+          trade.isAiCopy = true;
+          trade.aiMeta = meta;
+          
+          const msPassed = Math.max(Date.now() - dbTimestamp, 0);
+          const daysPassed = msPassed / (1000 * 60 * 60 * 24);
+          const fakeLivePnl = dbAllocated * 0.25 * daysPassed;
+
+          totalFloatingPnL += fakeLivePnl;
+          
+          if (dbAllocated && !isNaN(dbAllocated)) {
+            activeMargin += dbAllocated;
           }
         });
 
@@ -133,7 +159,7 @@ export default function AdminDashboardRoot() {
       setIsInitialLoad(false);
       if (!isBackgroundSync) setIsRefreshing(false);
     }
-  }, [getLivePrice, selectedUser]);
+  }, [selectedUser]);
 
   useEffect(() => { 
     loadData(false);
@@ -143,10 +169,58 @@ export default function AdminDashboardRoot() {
 
   const totalSystemLiquidity = users.reduce((acc, curr) => acc + (curr.totalEquity || (curr.balance + curr.tradingBalance)), 0);
 
+  // Directly map the database users into the Live Copy Trading Monitor
+  const activeCopySessions = useMemo(() => {
+    return users.map(user => {
+      const ctTrades = (user.openTrades || []).filter(t => t.isAiCopy);
+      if (ctTrades.length === 0) return null;
+
+      let totalAllocated = 0;
+      let currentProfit = 0;
+
+      const formattedTrades = ctTrades.map(trade => {
+        const meta = trade.aiMeta;
+        const allocated = meta?.allocated || 1000;
+        const start = meta?.timestamp || Date.now();
+        const msPassed = Math.max(dashboardTime - start, 0);
+        const msIn24Hours = 24 * 60 * 60 * 1000;
+        
+        const daysPassed = msPassed / msIn24Hours;
+        const tradeProfit = allocated * 0.25 * daysPassed;
+
+        totalAllocated += allocated;
+        currentProfit += tradeProfit;
+
+        const msRemaining = Math.max(msIn24Hours - msPassed, 0);
+        const hours = Math.floor(msRemaining / (1000 * 60 * 60));
+        const minutes = Math.floor((msRemaining % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((msRemaining % (1000 * 60)) / 1000);
+
+        return {
+          id: trade.id,
+          symbol: trade.symbol,
+          allocated,
+          profit: tradeProfit,
+          timer: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
+          traderName: meta?.traderName || 'Master Trader',
+          avatar: meta?.avatar
+        };
+      });
+
+      return {
+        owner: user,
+        trades: formattedTrades,
+        totalAllocated,
+        currentProfit
+      };
+    }).filter(Boolean) as { owner: AdminUser, trades: any[], totalAllocated: number, currentProfit: number }[];
+  }, [users, dashboardTime]);
+
   if (isInitialLoad) return <LoadingSpinner label="Synchronizing Admin Desk & User Ledgers..." />;
 
   return (
     <div className="animate-in fade-in duration-300 space-y-6">
+      
       <div className="w-full rounded-2xl bg-gradient-to-r from-red-900/40 via-blue-900/20 to-[#0B0E14] border border-red-500/30 p-6 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden shadow-[0_0_30px_rgba(239,68,68,0.1)]">
         <div className="absolute -right-20 -top-20 w-64 h-64 bg-red-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="flex items-center gap-5 relative z-10">
@@ -170,6 +244,89 @@ export default function AdminDashboardRoot() {
 
       <AdminMetrics usersCount={users.length} pendingCount={pendingTxs.length} totalLiquidity={totalSystemLiquidity} />
 
+      {/* ========================================================================= */}
+      {/* ALWAYS VISIBLE LIVE COPY TRADING MONITOR PANEL */}
+      {/* ========================================================================= */}
+      <div className="bg-[#151924] border border-blue-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden mt-6">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-emerald-500"></div>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400">
+            <Copy className="animate-pulse" size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-extrabold text-white">Live Copy Trading Monitor</h3>
+            <p className="text-xs text-gray-400 font-medium">Real-time breakdown of user positions & 24h progress timers</p>
+          </div>
+        </div>
+
+        {activeCopySessions.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeCopySessions.map(({ owner, trades, totalAllocated, currentProfit }, idx) => (
+              <div 
+                key={owner.id || idx} 
+                onClick={() => setSelectedUser(owner)}
+                className="bg-[#0B0E14] border border-white/5 hover:border-blue-500/50 rounded-2xl p-4 cursor-pointer transition-all flex flex-col justify-between gap-4 group"
+              >
+                <div className="flex justify-between items-start border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-blue-600/20 flex items-center justify-center text-blue-400 font-bold text-xs border border-blue-500/30">
+                      {owner.name ? owner.name.charAt(0).toUpperCase() : owner.email.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-white truncate max-w-[140px]">{owner.name || 'Trader'}</span>
+                      <span className="text-[10px] text-gray-400 font-mono truncate max-w-[140px]">{owner.email}</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-md">
+                    {trades.length} Position{trades.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {/* INDIVIDUAL STOCK POSITIONS & TIMERS */}
+                <div className="space-y-2.5 my-1">
+                  {trades.map(t => (
+                    <div key={t.id} className="bg-[#151924] border border-white/5 p-2.5 rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-extrabold text-white flex items-center gap-1">
+                          {t.symbol} <span className="text-[10px] text-gray-500 font-normal">({t.traderName})</span>
+                        </span>
+                        <span className="font-mono font-bold text-emerald-400">+${t.profit.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-gray-400 border-t border-white/5 pt-1.5">
+                        <span>Margin: ${t.allocated.toFixed(2)}</span>
+                        <span className="text-blue-400 flex items-center gap-1">
+                          <Clock size={10} /> {t.timer}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-between items-end border-t border-white/5 pt-3">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Total Margin</span>
+                    <span className="text-sm font-mono font-bold text-gray-300">${totalAllocated.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] text-emerald-500/80 font-bold uppercase tracking-wider">Live Return</span>
+                    <span className="text-xs font-mono font-extrabold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20">
+                      [+25%] [+${currentProfit.toFixed(2)} CT]
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-10 flex flex-col items-center justify-center text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
+            <Activity size={32} className="text-gray-600 mb-3" />
+            <p className="text-white font-bold text-sm">No Active Copy Trades</p>
+            <p className="text-gray-500 text-xs mt-1">Users are not currently mirroring any Master Traders.</p>
+          </div>
+        )}
+      </div>
+
       <div className="mt-6">
         <UsersTab users={users} refreshData={() => loadData(false)} showAlert={showAlert} onSelectUser={(user) => setSelectedUser(user)} />
       </div>
@@ -187,6 +344,30 @@ export default function AdminDashboardRoot() {
 function UserDetailModal({ user, getLivePrice, onClose }: { user: AdminUser; getLivePrice: (symbol: string) => number; onClose: () => void }) {
   const openTrades = user.openTrades || [];
   const hasActiveTrades = openTrades.length > 0;
+  
+  const [modalTime, setModalTime] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setModalTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  let dynamicFloatingPnL = 0;
+  openTrades.forEach(trade => {
+    if (trade.isAiCopy && trade.aiMeta) {
+      const allocatedAmount = trade.aiMeta.allocated || (trade.volume * trade.openPrice);
+      const startTickingTime = trade.aiMeta.timestamp || Date.now();
+      const msPassed = Math.max(modalTime - startTickingTime, 0);
+      const daysPassed = msPassed / (1000 * 60 * 60 * 24);
+      dynamicFloatingPnL += allocatedAmount * 0.25 * daysPassed;
+    } else {
+      const currentPrice = getLivePrice(trade.symbol) || trade.openPrice;
+      const isLong = trade.type === 'BUY' || trade.type === 'LONG';
+      const priceDiff = isLong ? (currentPrice - trade.openPrice) : (trade.openPrice - currentPrice);
+      dynamicFloatingPnL += (priceDiff / trade.openPrice) * (trade.volume * trade.openPrice);
+    }
+  });
+
+  const dynamicTotalEquity = user.balance + user.tradingBalance + dynamicFloatingPnL;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
@@ -203,7 +384,6 @@ function UserDetailModal({ user, getLivePrice, onClose }: { user: AdminUser; get
                   {user.role}
                 </span>
                 
-                {/* PRO SUBSCRIPTION BADGE */}
                 {user.isPro && (
                   <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 flex items-center gap-1">
                     <Crown size={12} /> PRO {user.proPlanType ? `(${user.proPlanType})` : ''}
@@ -227,7 +407,7 @@ function UserDetailModal({ user, getLivePrice, onClose }: { user: AdminUser; get
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-[#0B0E14] border border-blue-500/30 p-4 rounded-2xl relative overflow-hidden">
               <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5"><DollarSign size={14} className="text-blue-400" /> Total Live Equity</div>
-              <div className="text-2xl font-mono font-extrabold text-white">${(user.totalEquity || (user.balance + user.tradingBalance)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className="text-2xl font-mono font-extrabold text-white">${Math.max(0, dynamicTotalEquity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
               <p className="text-[10px] text-gray-400 mt-1">Available Wallet + Trade Capital + Live PnL</p>
             </div>
             <div className="bg-[#0B0E14] border border-white/5 p-4 rounded-2xl">
@@ -245,9 +425,9 @@ function UserDetailModal({ user, getLivePrice, onClose }: { user: AdminUser; get
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2"><Activity size={16} className="text-blue-400" /> Live Active Trades ({openTrades.length})</h3>
-              {user.floatingPnL !== undefined && user.floatingPnL !== 0 && (
-                <div className={`text-xs font-mono font-bold flex items-center gap-1 px-3 py-1 rounded-xl border ${user.floatingPnL >= 0 ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-                  Unrealized PnL: {user.floatingPnL >= 0 ? '+' : ''}${user.floatingPnL.toFixed(2)}
+              {dynamicFloatingPnL !== 0 && (
+                <div className={`text-xs font-mono font-bold flex items-center gap-1 px-3 py-1 rounded-xl border ${dynamicFloatingPnL >= 0 ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                  Unrealized PnL: {dynamicFloatingPnL >= 0 ? '+' : ''}${dynamicFloatingPnL.toFixed(2)}
                 </div>
               )}
             </div>
@@ -272,12 +452,25 @@ function UserDetailModal({ user, getLivePrice, onClose }: { user: AdminUser; get
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {openTrades.map((trade, idx) => {
-                      const livePrice = getLivePrice(trade.symbol) || trade.openPrice;
+                      let livePrice = getLivePrice(trade.symbol) || trade.openPrice;
                       const isLong = trade.type === 'BUY' || trade.type === 'LONG';
-                      const diff = isLong ? (livePrice - trade.openPrice) : (trade.openPrice - livePrice);
-                      
-                      // FIX: Removed duplicate leverage multiplier
-                      const pnl = (diff / trade.openPrice) * (trade.volume * trade.openPrice);
+                      let pnl = 0;
+
+                      if (trade.isAiCopy && trade.aiMeta) {
+                        const allocatedAmount = trade.aiMeta.allocated || (trade.volume * trade.openPrice);
+                        const startTickingTime = trade.aiMeta.timestamp || Date.now();
+                        const msPassed = Math.max(modalTime - startTickingTime, 0);
+                        const daysPassed = msPassed / (1000 * 60 * 60 * 24);
+                        
+                        pnl = allocatedAmount * 0.25 * daysPassed;
+                        
+                        livePrice = isLong 
+                          ? trade.openPrice + (pnl / trade.volume)
+                          : Math.max(trade.openPrice - (pnl / trade.volume), 0);
+                      } else {
+                        const diff = isLong ? (livePrice - trade.openPrice) : (trade.openPrice - livePrice);
+                        pnl = (diff / trade.openPrice) * (trade.volume * trade.openPrice);
+                      }
                       
                       const isProfitable = pnl >= 0;
                       const calculatedMargin = trade.margin || ((trade.volume * trade.openPrice) / (trade.leverage || 1));
@@ -289,19 +482,33 @@ function UserDetailModal({ user, getLivePrice, onClose }: { user: AdminUser; get
                               <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
                                 {isLong ? 'BUY' : 'SELL'}
                               </span>
-                              <span className="font-extrabold text-white">{trade.symbol}</span>
+                              <span className="font-extrabold text-white flex items-center gap-1">
+                                {trade.symbol} 
+                              </span>
                             </div>
                           </td>
                           <td className="p-3.5 text-gray-300">{trade.leverage || 1}x</td>
                           <td className="p-3.5 text-gray-300">${trade.openPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                           <td className="p-3.5 text-blue-400 font-bold">${livePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                           <td className="p-3.5 text-yellow-400">${calculatedMargin.toFixed(2)}</td>
-                          <td className={`p-3.5 text-right font-bold ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
-                            <div className="flex items-center justify-end gap-1">
-                              {isProfitable ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                              {isProfitable ? '+' : ''}${pnl.toFixed(2)}
-                            </div>
-                          </td>
+                          
+                          {trade.isAiCopy ? (
+                            <td className="p-3.5 text-right font-bold text-emerald-400">
+                              <div className="flex items-center justify-end gap-1">
+                                <TrendingUp size={14} />
+                                <span className="bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 text-[10px]">
+                                  [+25%] [+${pnl.toFixed(2)} CT]
+                                </span>
+                              </div>
+                            </td>
+                          ) : (
+                            <td className={`p-3.5 text-right font-bold ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
+                              <div className="flex items-center justify-end gap-1">
+                                {isProfitable ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                                {isProfitable ? '+' : ''}${pnl.toFixed(2)}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

@@ -14,8 +14,8 @@ import { getUserProfile } from '@/app/actions/profile';
 interface SidebarProps {
   location?: string;
   isBanned?: boolean;
-  activeTab?: string; 
-  setActiveTab?: (tab: string) => void; 
+  activeTab?: string;
+  setActiveTab?: (tab: string) => void;
 }
 
 export default function Sidebar({ location = "Detecting...", isBanned = false }: SidebarProps) {
@@ -38,7 +38,7 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
           const firstName = data.first_name || '';
           const lastName = data.last_name || '';
           const fullName = `${firstName} ${lastName}`.trim() || data.email?.split('@')[0] || 'Trader';
-          
+
           const fInitial = firstName ? firstName[0].toUpperCase() : '';
           const lInitial = lastName ? lastName[0].toUpperCase() : '';
           const initials = (fInitial + lInitial) || fullName[0]?.toUpperCase() || 'U';
@@ -140,7 +140,7 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
 
         {/* BAN BLOCKER */}
         {isBanned && (
-          <div 
+          <div
             onClick={handleBannedClick}
             className="absolute inset-0 z-[100] bg-[#080a0f]/60 backdrop-blur-[3px] flex flex-col items-center justify-center text-center px-6 cursor-not-allowed"
           >
@@ -156,8 +156,8 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
 
         {/* LOGO */}
         <div className="p-6 border-b border-white/5 pt-20 lg:pt-6 shrink-0">
-          <Link 
-            href={isBanned ? "#" : "/"} 
+          <Link
+            href={isBanned ? "#" : "/"}
             onClick={isBanned ? handleBannedClick : () => setIsOpen(false)}
             className={`flex items-center gap-3 transition-opacity ${isBanned ? 'pointer-events-none opacity-50' : 'hover:opacity-80'}`}
           >
@@ -188,7 +188,7 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
                       href={isBanned ? '#' : item.href}
                       onClick={isBanned ? handleBannedClick : () => setIsOpen(false)}
                       className={`w-full flex items-center justify-between px-3 py-3 rounded-xl text-sm font-bold transition-all ${
-                        isBanned 
+                        isBanned
                           ? 'opacity-30 cursor-not-allowed text-red-500/50 border border-transparent pointer-events-none'
                           : isActive
                             ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-inner'

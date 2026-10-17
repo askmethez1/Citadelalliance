@@ -8,10 +8,17 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// NOTE: this is a "use server" file, so these must stay NON-exported.
+// Keep them in sync with BONUS_CONFIG in app/dashboard/components/BonusCard.tsx
+const BONUS_AMOUNT = 100;
+const REQUIRED_DEPOSIT = 1000;
+const UNLOCK_THRESHOLD = 200;
+
 export interface WalletData {
   balance: number;
   bonusBalance: number;
   hasClaimedBonus: boolean;
+  totalDeposited: number; // NEW: sum of completed deposits
   unrealizedPnL: number;
   country: string;
   email: string;
@@ -36,6 +43,29 @@ async function getCurrentUserId(): Promise<number | null> {
   return isNaN(userId) ? null : userId;
 }
 
+// Sum of COMPLETED deposits for a user.
+// transactions.amount is stored as TEXT (e.g. '+100.00', '-$50.00', '500'),
+// so we strip everything except digits and the decimal point before summing.
+// Accepts an optional client so it can run inside an open DB transaction.
+async function getTotalDeposited(
+  userId: number,
+  client?: { query: Pool['query'] }
+): Promise<number> {
+  const runner = client ?? pool;
+  const { rows } = await runner.query(
+    `SELECT COALESCE(SUM(
+        NULLIF(regexp_replace(amount::text, '[^0-9.]', '', 'g'), '')::numeric
+      ), 0) AS total
+     FROM transactions
+     WHERE user_id = $1
+       AND type ILIKE '%deposit%'
+       AND status = 'Completed'`,
+    [userId]
+  );
+  const total = parseFloat(rows[0]?.total ?? '0');
+  return isNaN(total) ? 0 : total;
+}
+
 // 1. Fetch Real Logged-In User Wallet Balances
 export async function getWalletOverview(): Promise<WalletData | null> {
   try {
@@ -54,10 +84,13 @@ export async function getWalletOverview(): Promise<WalletData | null> {
       const rawBonus = rows[0].bonus_balance;
       const parsedBonus = typeof rawBonus === 'number' ? rawBonus : parseFloat(rawBonus || '0.00');
 
+      const totalDeposited = await getTotalDeposited(userId);
+
       return {
         balance: isNaN(parsedBalance) ? 0.00 : parsedBalance,
         bonusBalance: isNaN(parsedBonus) ? 0.00 : parsedBonus,
         hasClaimedBonus: rows[0].has_claimed_bonus || false,
+        totalDeposited,
         unrealizedPnL: 0.00,
         country: rows[0].country || 'Nigeria',
         email: rows[0].email,
@@ -70,36 +103,55 @@ export async function getWalletOverview(): Promise<WalletData | null> {
   }
 }
 
-// 2. Claim Signup Bonus
+// 2. Claim Signup Bonus (requires $1,000 in total completed deposits)
 export async function claimSignupBonus(): Promise<{ success: boolean; message: string }> {
   try {
     const userId = await getCurrentUserId();
     if (!userId) return { success: false, message: 'Unauthorized. Please log in.' };
 
-    // Prevent double claiming
-    const { rows } = await pool.query('SELECT has_claimed_bonus FROM users WHERE id = $1', [userId]);
-    if (rows.length === 0) return { success: false, message: 'User not found.' };
-    if (rows[0].has_claimed_bonus) return { success: false, message: 'Bonus has already been claimed.' };
-
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      
-      // Add $100 to bonus_balance and flag user
-      await client.query(
-        'UPDATE users SET has_claimed_bonus = TRUE, bonus_balance = bonus_balance + 100 WHERE id = $1',
+
+      // Lock the user row so two parallel claims can't both pass the checks
+      const { rows } = await client.query(
+        'SELECT has_claimed_bonus FROM users WHERE id = $1 FOR UPDATE',
         [userId]
+      );
+      if (rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: 'User not found.' };
+      }
+      if (rows[0].has_claimed_bonus) {
+        await client.query('ROLLBACK');
+        return { success: false, message: 'Bonus has already been claimed.' };
+      }
+
+      // Enforce the deposit requirement on the server
+      const totalDeposited = await getTotalDeposited(userId, client);
+      if (totalDeposited < REQUIRED_DEPOSIT) {
+        await client.query('ROLLBACK');
+        return {
+          success: false,
+          message: `Deposit a total of $${REQUIRED_DEPOSIT.toLocaleString()} to unlock your bonus. You have deposited $${totalDeposited.toFixed(2)}.`,
+        };
+      }
+
+      // Add bonus to bonus_balance and flag user
+      await client.query(
+        'UPDATE users SET has_claimed_bonus = TRUE, bonus_balance = bonus_balance + $1 WHERE id = $2',
+        [BONUS_AMOUNT, userId]
       );
 
       // Log the bonus in transactions
       await client.query(
-        `INSERT INTO transactions (user_id, type, asset, amount, status, network, created_at) 
-         VALUES ($1, 'Signup Bonus', 'USD', '+100.00', 'Completed', 'System Reward', NOW())`,
-        [userId]
+        `INSERT INTO transactions (user_id, type, asset, amount, status, network, created_at)
+         VALUES ($1, 'Signup Bonus', 'USD', $2, 'Completed', 'System Reward', NOW())`,
+        [userId, `+${BONUS_AMOUNT.toFixed(2)}`]
       );
 
       await client.query('COMMIT');
-      return { success: true, message: 'Signup Bonus of $100 claimed successfully!' };
+      return { success: true, message: `Signup Bonus of $${BONUS_AMOUNT} claimed successfully!` };
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
@@ -121,7 +173,7 @@ export async function transferBonusToReal(): Promise<{ success: boolean; message
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      
+
       // Lock row to prevent race conditions
       const { rows } = await client.query('SELECT bonus_balance FROM users WHERE id = $1 FOR UPDATE', [userId]);
       if (rows.length === 0) {
@@ -131,11 +183,11 @@ export async function transferBonusToReal(): Promise<{ success: boolean; message
 
       const rawBonus = rows[0].bonus_balance;
       const bonus = typeof rawBonus === 'number' ? rawBonus : parseFloat(rawBonus || '0');
-      
-      // Double to withdraw requirement (100 * 2 = 200)
-      if (bonus < 200) {
+
+      // Double to withdraw requirement
+      if (bonus < UNLOCK_THRESHOLD) {
         await client.query('ROLLBACK');
-        return { success: false, message: `Bonus must be traded to reach at least $200.00 to unlock withdrawal. Current bonus: $${bonus.toFixed(2)}.` };
+        return { success: false, message: `Bonus must be traded to reach at least $${UNLOCK_THRESHOLD.toFixed(2)} to unlock withdrawal. Current bonus: $${bonus.toFixed(2)}.` };
       }
 
       // Move funds to real balance, reset bonus
@@ -146,7 +198,7 @@ export async function transferBonusToReal(): Promise<{ success: boolean; message
 
       // Log the transfer
       await client.query(
-        `INSERT INTO transactions (user_id, type, asset, amount, status, network, created_at) 
+        `INSERT INTO transactions (user_id, type, asset, amount, status, network, created_at)
          VALUES ($1, 'Transfer', 'USD', $2, 'Completed', 'Bonus to Real Balance', NOW())`,
         [userId, `+${bonus.toFixed(2)}`]
       );
@@ -172,10 +224,10 @@ export async function getTransactionHistory(): Promise<TransactionRecord[]> {
     if (!userId) return [];
 
     const { rows } = await pool.query(
-      `SELECT id, type, asset, amount, status, created_at, tx_hash 
-       FROM transactions 
-       WHERE user_id = $1 
-       ORDER BY created_at DESC 
+      `SELECT id, type, asset, amount, status, created_at, tx_hash
+       FROM transactions
+       WHERE user_id = $1
+       ORDER BY created_at DESC
        LIMIT 20`,
       [userId]
     );
@@ -235,7 +287,7 @@ export async function createWithdrawalRequest(data: {
 
     // Insert transaction record for current user
     await client.query(
-      `INSERT INTO transactions (user_id, type, asset, amount, status, destination_address, network, created_at) 
+      `INSERT INTO transactions (user_id, type, asset, amount, status, destination_address, network, created_at)
        VALUES ($1, 'Withdrawal', $2, $3, 'Pending', $4, $5, NOW())`,
       [userId, `${data.asset} (${data.network})`, `-$${data.amount.toFixed(2)}`, data.address, data.network]
     );

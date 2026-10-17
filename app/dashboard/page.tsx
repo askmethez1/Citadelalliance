@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Crown, TrendingUp, ArrowUpRight, ArrowDownLeft, 
-  Ban, CreditCard, History, MessageSquare, 
-  ShieldAlert, Settings, Eye, X, Activity, 
-  DollarSign, Briefcase, ArrowDownRight, Award, Gift, CheckCircle2
+import {
+  Crown, TrendingUp, ArrowUpRight, ArrowDownLeft,
+  Ban, CreditCard, History, MessageSquare,
+  ShieldAlert, Settings, Eye, X, Activity,
+  DollarSign, Briefcase, ArrowDownRight, Award, CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
 import Sidebar from './components/Sidebar';
@@ -15,10 +15,11 @@ import TradingTerminal from './components/TradingTerminal';
 import RecentTrades from './components/RecentTrades';
 import RecentActivity from './components/RecentActivity';
 import DashboardSkeleton from './components/DashboardSkeleton';
+import { BonusClaimBanner } from './components/BonusCard';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 
 import { getUserRole, checkBanStatus, logoutUser } from '@/app/actions/auth';
-import { getWalletOverview, claimSignupBonus } from '@/app/actions/wallet';
+import { getWalletOverview } from '@/app/actions/wallet';
 import { getUserProfile } from '@/app/actions/profile';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 import { usePricingEngine } from '@/app/hooks/usePricingEngine';
@@ -27,7 +28,7 @@ import { usePricingEngine } from '@/app/hooks/usePricingEngine';
 const TAB_CONTENT: Record<string, any> = {
   wallet: { icon: ArrowDownLeft, color: 'text-blue-500', bg: 'bg-blue-500/10', title: 'Wallet & Deposits', desc: 'Fund your account and manage withdrawals here.' },
   copy: { icon: Crown, color: 'text-yellow-500', bg: 'bg-yellow-500/10', title: 'Copy Trading Masters', desc: 'Browse top-performing quantitative traders and mirror their execution algorithms.' },
-  'buy-crypto': { icon: CreditCard, color: 'text-purple-500', bg: 'bg-purple-500/10', title: 'Buy Crypto', desc: 'Purchase digital assets instantly via credit card or bank transfer.' },
+  'buy-crypto': { icon: CreditCard, color: 'text-purple-500', bg: 'bg-purple-500/10', title: 'BuyCrypto', desc: 'Purchase digital assets instantly via credit card or bank transfer.' },
   statement: { icon: History, color: 'text-blue-400', bg: 'bg-blue-400/10', title: 'Account Statement', desc: 'Detailed historical ledger of all your trades, deposits, and fees.' },
   chat: { icon: MessageSquare, color: 'text-gray-400', bg: 'bg-gray-500/10', title: 'Trader Chat', desc: 'Connect with customer support or your designated account manager.' },
   security: { icon: ShieldAlert, color: 'text-gray-300', bg: 'bg-gray-400/10', title: 'Security Settings', desc: 'Manage your credentials, 2FA, and personal details.' },
@@ -41,29 +42,29 @@ export default function DashboardPage() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isBanned, setIsBanned] = useState(false);
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
-  
+
   // Database-backed State for Signup Bonus & Pro Status
   const [hasClaimedBonus, setHasClaimedBonus] = useState(false);
   const [localBonusBalance, setLocalBonusBalance] = useState(0);
-  const [isClaiming, setIsClaiming] = useState(false);
+  const [totalDeposited, setTotalDeposited] = useState(0);
   const [isProUser, setIsProUser] = useState(false);
-  
-  const [modalConfig, setModalConfig] = useState<{isOpen: boolean; title?: string; message: string; type: ModalType}>({ 
-    isOpen: false, 
-    message: '', 
-    type: 'info' 
+
+  const [modalConfig, setModalConfig] = useState<{isOpen: boolean; title?: string; message: string; type: ModalType}>({
+    isOpen: false,
+    message: '',
+    type: 'info'
   });
   const showAlert = (message: string, type: ModalType = 'info', title?: string) => setModalConfig({ isOpen: true, message, type, title });
 
   // Hook into Wallet & Pricing Engines
-  const walletEngine = useWalletEngine() as any; 
+  const walletEngine = useWalletEngine() as any;
   const { balance, liveEquity, floatingPnL, marginUtilized, activeCopiers, isWalletLoading, refreshWallet, openTrades = [] } = walletEngine;
-  
+
   // Combine Wallet Engine state with Local Component state for seamless UI updates
-  const displayBonusBalance = walletEngine.bonusBalance !== undefined && walletEngine.bonusBalance > 0 
-    ? walletEngine.bonusBalance 
+  const displayBonusBalance = walletEngine.bonusBalance !== undefined && walletEngine.bonusBalance > 0
+    ? walletEngine.bonusBalance
     : localBonusBalance;
-  
+
   const displayTotalBalance = balance + displayBonusBalance;
 
   const { getLivePrice } = usePricingEngine();
@@ -82,10 +83,12 @@ export default function DashboardPage() {
         }
 
         // Fetch user's wallet overview to check bonus status
-        const walletData = await getWalletOverview();
+        const walletData: any = await getWalletOverview();
         if (walletData) {
           setHasClaimedBonus(walletData.hasClaimedBonus);
           setLocalBonusBalance(walletData.bonusBalance);
+          // Requires getWalletOverview to return totalDeposited (see wallet-bonus-actions.ts)
+          setTotalDeposited(walletData.totalDeposited ?? 0);
         }
 
         fetch('https://ipapi.co/json/')
@@ -107,26 +110,13 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [refreshWallet]);
 
-  // Handle claiming the bonus
-  const handleClaimBonus = async () => {
-    if (hasClaimedBonus) return;
-    setIsClaiming(true);
-    
-    try {
-      const res = await claimSignupBonus();
-      if (res.success) {
-        setHasClaimedBonus(true);
-        setLocalBonusBalance(prev => prev + 100);
-        refreshWallet();
-        showAlert(res.message, 'success', 'Bonus Claimed!');
-      } else {
-        showAlert(res.message, 'error', 'Claim Failed');
-      }
-    } catch (error) {
-      showAlert("An error occurred while claiming your bonus.", 'error');
-    } finally {
-      setIsClaiming(false);
-    }
+  // Called by BonusClaimBanner after a successful claim
+  const handleBonusClaimed = async () => {
+    setHasClaimedBonus(true);
+    refreshWallet();
+    // Re-fetch the real bonus balance instead of guessing locally
+    const w: any = await getWalletOverview();
+    if (w) setLocalBonusBalance(w.bonusBalance);
   };
 
   if (isInitializing || isWalletLoading) return <DashboardSkeleton activeTab={activeTab} location={location} />;
@@ -187,42 +177,19 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* SIGNUP BONUS CALL TO ACTION */}
-                {!hasClaimedBonus && (
-                  <div 
-                    onClick={handleClaimBonus}
-                    className="w-full rounded-2xl bg-gradient-to-r from-purple-900/40 via-purple-800/20 to-[#0B0E14] border border-purple-500/30 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer hover:border-purple-500/60 transition-all group"
-                  >
-                    <div className="flex items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 shrink-0 group-hover:scale-110 transition-transform">
-                        <Gift size={20} className="sm:w-6 sm:h-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-white font-bold text-base sm:text-lg flex flex-wrap items-center gap-2">
-                          Claim your $100 Signup Bonus
-                        </h3>
-                        <p className="text-xs text-gray-400 mt-0.5">Trade with bonus funds. Double it to unlock withdrawals.</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-end w-full sm:w-auto gap-3 mt-2 sm:mt-0">
-                      <span className="text-sm font-bold text-purple-400">Click to Claim</span>
-                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${isClaiming ? 'border-purple-500 opacity-50' : 'border-purple-500 group-hover:bg-purple-500/20'}`}>
-                        {isClaiming ? (
-                          <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <CheckCircle2 size={20} className="text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {/* SIGNUP BONUS (requires $1,000 total deposits) */}
+                <BonusClaimBanner
+                  hasClaimed={hasClaimedBonus}
+                  totalDeposited={totalDeposited}
+                  notify={showAlert}
+                  onClaimed={handleBonusClaimed}
+                />
 
                 {/* METRICS GRID */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                  
+
                   {/* Total Balance Card */}
-                  <div 
+                  <div
                     onClick={() => setIsBreakdownOpen(true)}
                     className="bg-[#151924] border border-white/5 hover:border-blue-500/40 rounded-2xl p-5 shadow-lg relative overflow-hidden cursor-pointer transition-all group flex flex-col justify-between"
                   >
@@ -247,7 +214,7 @@ export default function DashboardPage() {
                   </div>
 
                   {/* Equity Card */}
-                  <div 
+                  <div
                     onClick={() => setIsBreakdownOpen(true)}
                     className="bg-[#151924] border border-white/5 hover:border-blue-500/40 rounded-2xl p-5 shadow-lg cursor-pointer transition-all group flex flex-col justify-between"
                   >
@@ -309,7 +276,7 @@ export default function DashboardPage() {
 
       {/* ACCOUNT BREAKDOWN MODAL */}
       {isBreakdownOpen && (
-        <AccountBreakdownModal 
+        <AccountBreakdownModal
           onClose={() => setIsBreakdownOpen(false)}
           balance={displayTotalBalance}
           bonusBalance={displayBonusBalance}
@@ -334,26 +301,26 @@ export default function DashboardPage() {
 // ------------------------------------------------------------------
 // ACCOUNT BREAKDOWN MODAL (USER FACING)
 // ------------------------------------------------------------------
-function AccountBreakdownModal({ 
-  onClose, balance, bonusBalance, liveEquity, floatingPnL, openTrades, getLivePrice 
-}: { 
-  onClose: () => void; 
-  balance: number; 
+function AccountBreakdownModal({
+  onClose, balance, bonusBalance, liveEquity, floatingPnL, openTrades, getLivePrice
+}: {
+  onClose: () => void;
+  balance: number;
   bonusBalance: number;
-  liveEquity: number; 
-  floatingPnL: number; 
-  openTrades: any[]; 
-  getLivePrice: (symbol: string) => number; 
+  liveEquity: number;
+  floatingPnL: number;
+  openTrades: any[];
+  getLivePrice: (symbol: string) => number;
 }) {
   const hasActiveTrades = openTrades.length > 0;
-  
+
   // Calculate total margin locked in active trades
   const capitalInTrade = openTrades.reduce((acc, trade) => acc + (trade.margin || ((trade.volume * trade.openPrice) / trade.leverage) || 0), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-[#151924] border border-white/10 rounded-2xl sm:rounded-3xl w-full max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative">
-        
+
         {/* Modal Header */}
         <div className="p-4 sm:p-6 border-b border-white/10 flex items-start sm:items-center justify-between gap-4 bg-[#0B0E14] shrink-0">
           <div>
@@ -362,8 +329,8 @@ function AccountBreakdownModal({
             </h2>
             <p className="text-xs text-gray-400 mt-1">Live tracking of your wallet funds, bonuses, and active market capital.</p>
           </div>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors shrink-0"
           >
             <X size={18} />
@@ -372,10 +339,10 @@ function AccountBreakdownModal({
 
         {/* Modal Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
-          
+
           {/* 4-COLUMN BALANCE BREAKDOWN CARDS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
+
             {/* Total Live Equity */}
             <div className="bg-[#0B0E14] border border-blue-500/30 p-4 rounded-2xl relative overflow-hidden flex flex-col justify-center">
               <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
@@ -498,8 +465,8 @@ function AccountBreakdownModal({
 
         {/* Modal Footer */}
         <div className="p-4 border-t border-white/10 bg-[#0B0E14] flex justify-end shrink-0">
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="w-full sm:w-auto px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs sm:text-sm font-bold transition-all"
           >
             Close Breakdown
