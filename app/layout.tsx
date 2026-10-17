@@ -3,6 +3,7 @@ import { Playfair_Display, Lato } from 'next/font/google';
 import '../globals.css';
 import Footer from './components/Footer';
 import { MarketProvider } from './context/MarketContext';
+import { Analytics } from '@vercel/analytics/react'; // Add this import
 
 const playfair = Playfair_Display({
   subsets: ['latin'],
@@ -133,6 +134,9 @@ export default function RootLayout({
           </main>
           <Footer />
         </MarketProvider>
+        
+        {/* Vercel Analytics Component */}
+        <Analytics />
       </body>
     </html>
   );
