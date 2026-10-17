@@ -1,3 +1,5 @@
+// PATH: app/dashboard/components/BonusCard.tsx
+
 "use client";
 
 import React, { useState } from 'react';

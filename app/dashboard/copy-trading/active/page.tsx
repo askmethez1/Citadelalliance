@@ -1,3 +1,5 @@
+// PATH: app/dashboard/copy-trading/active/page.tsx
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -6,43 +8,46 @@ import Sidebar from '../../components/Sidebar';
 import TopHeader from '../../components/TopHeader';
 import DashboardSkeleton from '../../components/DashboardSkeleton';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
-import { ChevronLeft, Activity, Square, TrendingUp, Loader2, Edit2, Check, X as CancelIcon, Clock } from 'lucide-react';
+import { ChevronLeft, Activity, Square, TrendingUp, Loader2, Edit2, Check, X as CancelIcon, Clock, Info } from 'lucide-react';
 
 import { getUserProfile } from '@/app/actions/profile';
-import { getTradingData, closeTrade, updateTradeSLTP } from '@/app/actions/trading';
-import { usePricingEngine } from '@/app/hooks/usePricingEngine'; 
+import { getActiveCopies, closeActiveCopy, updateCopySLTP } from '@/app/actions/copytrading';
+import { usePricingEngine } from '@/app/hooks/usePricingEngine';
+import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 
-interface Trade {
-  id: string;
-  symbol: string;
-  type: 'BUY' | 'SELL';
-  marginMode: string;
-  leverage: number;
-  volume: number;
-  openPrice: number;
-  margin?: number;
-  tp: number;
-  sl: number;
-  pnl: number;
-  status: string;
-  openTime: string;
-  createdAt?: string;
+import { TRADERS } from '@/app/config/traders';
+import { TRADING_ASSETS } from '@/app/config/assets';
+
+// SIMULATION SETTINGS - keep in sync with SIM_RATE_PER_CYCLE / CYCLE_MS in app/actions/copytrading.ts
+// (the server is the source of truth for what actually gets credited; this is only the live display)
+const SIM_RATE_PER_CYCLE = 0.25;
+const CYCLE_MS = 24 * 60 * 60 * 1000;
+
+interface DBActiveCopy {
+  id: number;
+  user_id: number;
+  trader_id: number;
+  amount: string | number;
+  entry_price: string | number;
+  sl: string | number | null;
+  tp: string | number | null;
+  created_at: string;
 }
 
 export default function ActiveCopyTradesPage() {
   const [sidebarTab, setSidebarTab] = useState('copy-trading');
   const [userCountry, setUserCountry] = useState('Nigeria');
-  
+
   const { getLivePrice } = usePricingEngine();
-  
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [aiMeta, setAiMeta] = useState<Record<string, any>>({});
+  const walletEngine = useWalletEngine() as any;
+
+  const [copies, setCopies] = useState<DBActiveCopy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
-  
-  const [closingId, setClosingId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [closingId, setClosingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [editTp, setEditTp] = useState<string>('');
   const [editSl, setEditSl] = useState<string>('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -58,19 +63,16 @@ export default function ActiveCopyTradesPage() {
 
   useEffect(() => {
     const initData = async () => {
-      const [tradingData, profile] = await Promise.all([
-        getTradingData(),
-        getUserProfile()
+      const [profile, copiesRes] = await Promise.all([
+        getUserProfile(),
+        getActiveCopies()
       ]);
 
       if (profile?.country) setUserCountry(profile.country);
-      if (tradingData && tradingData.trades) {
-        setTrades(tradingData.trades.filter((t: any) => t.status === 'OPEN'));
+
+      if (copiesRes?.success && copiesRes.data) {
+        setCopies(copiesRes.data as any[]);
       }
-      
-      const storedMeta = JSON.parse(localStorage.getItem('ai_copy_meta') || '{}');
-      setAiMeta(storedMeta);
-      
       setIsLoading(false);
     };
 
@@ -83,107 +85,99 @@ export default function ActiveCopyTradesPage() {
     setModalConfig({ isOpen: true, message, type, title });
   };
 
-  const activeAiTradesWithMeta = useMemo(() => {
-    return trades.map(trade => {
-      let meta = aiMeta[trade.id];
-      
-      if (!meta) {
-        const dbAllocated = trade.margin || ((trade.volume * trade.openPrice) / (trade.leverage || 1));
-        const dbTimestamp = trade.openTime ? new Date(trade.openTime).getTime() : Date.now();
-        
-        meta = {
-          traderName: "Master Trader",
-          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${trade.id}`,
-          allocated: dbAllocated,
-          timestamp: dbTimestamp
-        };
-      }
-      
-      return { ...trade, resolvedMeta: meta };
+  const mappedTrades = useMemo(() => {
+    const stockAssets = TRADING_ASSETS.filter(a => a.type === 'stock');
+
+    return copies.map(copy => {
+      const trader = TRADERS.find(t => String(t.id) === String(copy.trader_id)) || TRADERS[0];
+      const traderNumId = parseInt(trader.id) || 1;
+      const stockIndex = (traderNumId * 7 + 3) % stockAssets.length;
+      const symbol = stockAssets[stockIndex].symbol;
+
+      const allocated = parseFloat(String(copy.amount)) || 1000;
+      const entryPrice = parseFloat(String(copy.entry_price)) || 100;
+      const timestamp = new Date(copy.created_at).getTime();
+
+      return {
+        id: copy.id,
+        trader,
+        symbol,
+        allocated,
+        entryPrice,
+        timestamp,
+        leverage: 10,
+        sl: copy.sl ? parseFloat(String(copy.sl)) : 0,
+        tp: copy.tp ? parseFloat(String(copy.tp)) : 0,
+        isLong: traderNumId % 2 === 0
+      };
     });
-  }, [trades, aiMeta]);
+  }, [copies]);
 
-  // Safe profit & timer calculation to prevent NaN
+  // Simulated yield. Time is capped at ONE cycle so profit stops growing when the timer hits 00:00:00.
   const getTradeStats = (allocatedAmount: number, startTimestamp: number) => {
-    const validAllocated = isNaN(allocatedAmount) || allocatedAmount <= 0 ? 1000 : allocatedAmount;
-    const validStart = isNaN(startTimestamp) || startTimestamp <= 0 ? currentTime : startTimestamp;
+    let msPassed = currentTime - startTimestamp;
+    if (msPassed < 0) msPassed = 0;
+    msPassed = Math.min(msPassed, CYCLE_MS);
 
-    const msPassed = Math.max(currentTime - validStart, 0);
-    const msIn24Hours = 24 * 60 * 60 * 1000;
-    
-    // Progress capped at 100% for 24 hours
-    const progressPercent = Math.min((msPassed / msIn24Hours) * 100, 100);
-    
-    // Time remaining
-    const msRemaining = Math.max(msIn24Hours - msPassed, 0);
+    const progressPercent = (msPassed / CYCLE_MS) * 100;
+
+    const msRemaining = Math.max(CYCLE_MS - msPassed, 0);
     const hours = Math.floor(msRemaining / (1000 * 60 * 60));
     const minutes = Math.floor((msRemaining % (1000 * 60 * 60)) / (1000 * 60));
     const seconds = Math.floor((msRemaining % (1000 * 60)) / 1000);
-    
+
     const formattedTimer = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    const profit = allocatedAmount * SIM_RATE_PER_CYCLE * (msPassed / CYCLE_MS);
 
-    // +25% profit linearly adding up over 24 hours
-    const daysPassed = msPassed / msIn24Hours;
-    const fakeLivePnl = validAllocated * 0.25 * daysPassed;
-
-    return {
-      profit: isNaN(fakeLivePnl) ? 0 : fakeLivePnl,
-      progressPercent,
-      formattedTimer,
-      allocated: validAllocated
-    };
+    return { profit, progressPercent, formattedTimer };
   };
 
   const handleStopCopying = async (trade: any) => {
+    if (closingId !== null) return;
     setClosingId(trade.id);
-    
-    const meta = trade.resolvedMeta;
-    const { profit } = getTradeStats(meta.allocated, meta.timestamp);
-    
-    const isLong = trade.type === 'BUY';
-    const fakeLivePrice = isLong 
-      ? trade.openPrice + (profit / trade.volume)
-      : Math.max(trade.openPrice - (profit / trade.volume), 0);
-    
-    const res = await closeTrade(trade.id, fakeLivePrice, profit);
-    
-    if (res.success) {
-      setTrades(prev => prev.filter(t => t.id !== trade.id));
-      showAlert(`AI trade for ${trade.symbol} closed. Balance credited with +$${profit.toFixed(2)} Profit.`, 'success', 'Copy Trade Closed');
-    } else {
-      showAlert("Failed to close trade in engine.", "error");
+
+    try {
+      // The server computes the profit itself; we only send the trade id.
+      const res = await closeActiveCopy(trade.id);
+
+      if (res.success) {
+        setCopies(prev => prev.filter(t => t.id !== trade.id));
+        if (walletEngine.refreshWallet) walletEngine.refreshWallet();
+        showAlert(
+          `Simulated trade for ${trade.symbol} closed. Balance credited with $${trade.allocated.toFixed(2)} + $${(res.profit ?? 0).toFixed(2)} simulated profit.`,
+          'success',
+          'Copy Trade Closed'
+        );
+      } else {
+        showAlert(res.error || "Failed to close trade.", "error", "Close Failed");
+      }
+    } catch {
+      showAlert("Unexpected error while closing the trade.", "error");
+    } finally {
+      setClosingId(null);
     }
-    setClosingId(null);
   };
 
   const handleSaveSLTP = async (trade: any) => {
     if (isSavingEdit) return;
     setIsSavingEdit(true);
-    
+
     const newTp = parseFloat(editTp) || 0;
     const newSl = parseFloat(editSl) || 0;
 
-    const res = await updateTradeSLTP(trade.id, newSl, newTp);
+    const res = await updateCopySLTP(trade.id, newSl, newTp);
     if (res.success) {
-      setTrades(prev => prev.map(t => t.id === trade.id ? { ...t, tp: newTp, sl: newSl } : t));
+      setCopies(prev => prev.map(t => t.id === trade.id ? { ...t, tp: newTp, sl: newSl } : t));
       showAlert(`Take Profit and Stop Loss updated successfully.`, "success", "Modification Complete");
       setEditingId(null);
     } else {
-      showAlert("Failed to update TP/SL. Please try again.", "error");
+      showAlert(res.error || "Failed to update TP/SL. Please try again.", "error");
     }
     setIsSavingEdit(false);
   };
 
-  const totalAllocated = useMemo(() => {
-    return activeAiTradesWithMeta.reduce((sum, trade) => sum + (trade.resolvedMeta.allocated || 0), 0);
-  }, [activeAiTradesWithMeta]);
-
-  const totalDailyProfit = useMemo(() => {
-    return activeAiTradesWithMeta.reduce((sum, trade) => {
-      const { profit } = getTradeStats(trade.resolvedMeta.allocated, trade.resolvedMeta.timestamp);
-      return sum + profit;
-    }, 0);
-  }, [activeAiTradesWithMeta, currentTime]);
+  const totalAllocated = useMemo(() => mappedTrades.reduce((sum, t) => sum + t.allocated, 0), [mappedTrades]);
+  const totalDailyProfit = useMemo(() => mappedTrades.reduce((sum, t) => sum + getTradeStats(t.allocated, t.timestamp).profit, 0), [mappedTrades, currentTime]);
 
   if (isLoading) return <DashboardSkeleton activeTab={sidebarTab} location={userCountry} />;
 
@@ -196,7 +190,15 @@ export default function ActiveCopyTradesPage() {
 
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full flex flex-col">
           <div className="max-w-7xl mx-auto space-y-8 w-full flex-1">
-            
+
+            {/* PROTOTYPE NOTICE */}
+            <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl px-4 py-3 text-xs">
+              <Info size={16} className="shrink-0 mt-0.5" />
+              <span>
+                <b>Simulation mode.</b> Profit and the live mark shown here are simulated for demonstration and do not reflect real market positions.
+              </span>
+            </div>
+
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 border-b border-white/5 pb-6">
               <div className="flex items-center gap-4">
                 <Link href="/dashboard/copy-trading" className="p-2 bg-[#151924] border border-white/10 rounded-xl hover:bg-white/5 transition-colors">
@@ -216,7 +218,7 @@ export default function ActiveCopyTradesPage() {
                     <TrendingUp size={18} />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-emerald-400/80 text-[9px] font-bold uppercase tracking-wider">Accumulated Profit</span>
+                    <span className="text-emerald-400/80 text-[9px] font-bold uppercase tracking-wider">Simulated Profit</span>
                     <span className="text-white font-mono font-bold text-lg">+${totalDailyProfit.toFixed(2)}</span>
                   </div>
                 </div>
@@ -233,7 +235,7 @@ export default function ActiveCopyTradesPage() {
               </div>
             </div>
 
-            {activeAiTradesWithMeta.length === 0 ? (
+            {mappedTrades.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-32 bg-[#151924] border border-white/5 rounded-3xl">
                 <Activity size={48} className="text-gray-600 mb-4" />
                 <h2 className="text-xl font-bold text-white mb-2">No Active AI Trades</h2>
@@ -244,15 +246,14 @@ export default function ActiveCopyTradesPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {activeAiTradesWithMeta.map((trade) => {
-                  const meta = trade.resolvedMeta;
-                  const { profit, progressPercent, formattedTimer, allocated } = getTradeStats(meta.allocated, meta.timestamp);
-                  
-                  const isLong = trade.type === 'BUY';
-                  const fakeLivePrice = isLong 
-                    ? trade.openPrice + (profit / trade.volume)
-                    : Math.max(trade.openPrice - (profit / trade.volume), 0);
-                    
+                {mappedTrades.map((trade) => {
+                  const { profit, progressPercent, formattedTimer } = getTradeStats(trade.allocated, trade.timestamp);
+
+                  const volume = (trade.allocated * trade.leverage) / trade.entryPrice;
+                  const simulatedMark = trade.isLong
+                    ? trade.entryPrice + (profit / volume)
+                    : Math.max(trade.entryPrice - (profit / volume), 0);
+
                   const isEditing = editingId === trade.id;
 
                   return (
@@ -260,27 +261,26 @@ export default function ActiveCopyTradesPage() {
                       <div>
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-3">
-                            <img src={meta.avatar} alt={meta.traderName} className="w-12 h-12 rounded-2xl bg-[#0B0E14] border border-white/10 p-1" />
+                            <img src={trade.trader.avatar} alt={trade.trader.name} className="w-12 h-12 rounded-2xl bg-[#0B0E14] border border-white/10 p-1" />
                             <div>
-                              <h3 className="text-base font-bold text-white">{meta.traderName}</h3>
+                              <h3 className="text-base font-bold text-white">{trade.trader.name}</h3>
                               <p className="text-xs text-gray-500 font-mono">ID: {trade.id}</p>
                             </div>
                           </div>
-                          <span className={`font-mono font-bold text-[10px] px-2.5 py-1 rounded-lg ${isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                            {isLong ? 'LONG' : 'SHORT'} {trade.leverage}x
+                          <span className={`font-mono font-bold text-[10px] px-2.5 py-1 rounded-lg ${trade.isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                            {trade.isLong ? 'LONG' : 'SHORT'} {trade.leverage}x
                           </span>
                         </div>
 
-                        {/* 24-HOUR TIMER & PROGRESS BAR */}
                         <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-3 mb-4 space-y-2">
                           <div className="flex items-center justify-between text-xs font-mono">
                             <span className="text-gray-400 flex items-center gap-1.5 text-[11px]">
-                              <Clock size={14} className="text-blue-400" /> 24h Yield Cycle
+                              <Clock size={14} className="text-blue-400" /> 24h Simulation Cycle
                             </span>
                             <span className="text-blue-400 font-bold">{formattedTimer}</span>
                           </div>
                           <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                            <div 
+                            <div
                               className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-1000"
                               style={{ width: `${progressPercent}%` }}
                             ></div>
@@ -295,31 +295,31 @@ export default function ActiveCopyTradesPage() {
                               +${profit.toFixed(2)}
                             </span>
                           </div>
-                          
+
                           <div className="grid grid-cols-2 gap-y-3 mt-4 text-[11px] font-mono border-t border-white/5 pt-3">
                             <div>
                               <div className="text-gray-500 mb-0.5">Allocated</div>
-                              <div className="text-white font-bold">${allocated.toFixed(2)}</div>
+                              <div className="text-white font-bold">${trade.allocated.toFixed(2)}</div>
                             </div>
                             <div className="text-right">
                               <div className="text-gray-500 mb-0.5">Volume</div>
-                              <div className="text-white font-bold">{trade.volume.toFixed(4)}</div>
+                              <div className="text-white font-bold">{volume.toFixed(4)}</div>
                             </div>
                             <div>
                               <div className="text-gray-500 mb-0.5">Entry Price</div>
-                              <div className="text-gray-300">${trade.openPrice.toFixed(2)}</div>
+                              <div className="text-gray-300">${trade.entryPrice.toFixed(2)}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-gray-500 mb-0.5">Live Mark</div>
+                              <div className="text-gray-500 mb-0.5">Simulated Mark</div>
                               <div className="text-white">
-                                ${fakeLivePrice.toFixed(2)}
+                                ${simulatedMark.toFixed(2)}
                               </div>
                             </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-white/5 relative group">
                             {!isEditing && (
-                              <button 
+                              <button
                                 onClick={() => {
                                   setEditingId(trade.id);
                                   setEditTp(trade.tp ? trade.tp.toString() : '');
@@ -366,14 +366,14 @@ export default function ActiveCopyTradesPage() {
 
                             {isEditing && (
                               <div className="col-span-2 flex items-center justify-end gap-2 mt-2">
-                                <button 
-                                  onClick={() => setEditingId(null)} 
+                                <button
+                                  onClick={() => setEditingId(null)}
                                   className="text-gray-400 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded"
                                 >
                                   <CancelIcon size={12}/> Cancel
                                 </button>
-                                <button 
-                                  onClick={() => handleSaveSLTP(trade)} 
+                                <button
+                                  onClick={() => handleSaveSLTP(trade)}
                                   disabled={isSavingEdit}
                                   className="text-green-400 hover:text-green-300 flex items-center gap-1 text-[10px] bg-green-500/10 px-2 py-1 rounded"
                                 >
@@ -388,7 +388,7 @@ export default function ActiveCopyTradesPage() {
 
                       <button
                         onClick={() => handleStopCopying(trade)}
-                        disabled={closingId === trade.id}
+                        disabled={closingId !== null}
                         className="w-full py-3 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {closingId === trade.id ? (

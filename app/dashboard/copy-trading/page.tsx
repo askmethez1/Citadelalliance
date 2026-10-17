@@ -1,6 +1,8 @@
+// PATH: app/dashboard/copy-trading/page.tsx
+
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Sidebar from '../components/Sidebar';
 import TopHeader from '../components/TopHeader';
@@ -9,12 +11,11 @@ import NotificationModal, { ModalType } from '@/app/components/ui/NotificationMo
 import Pagination from '@/app/components/ui/Pagination';
 import ProLockScreen from '../components/ProLockScreen';
 import {
-  Users, TrendingUp, TrendingDown,
-  Search, Play, Activity, Loader2, Wallet, Users2, ShieldCheck, CheckCircle2
+  Users, Search, Activity, Loader2, Wallet, Users2, ShieldCheck, CheckCircle2, Info
 } from 'lucide-react';
 
 import { getUserProfile } from '@/app/actions/profile';
-import { openTrade, getTradingData } from '@/app/actions/trading';
+import { createActiveCopy } from '@/app/actions/copytrading';
 import { usePricingEngine } from '@/app/hooks/usePricingEngine';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 import { TRADING_ASSETS } from '@/app/config/assets';
@@ -29,12 +30,16 @@ interface TraderWithLiveStats extends MasterTrader {
   };
 }
 
+const MIN_ALLOCATION = 500;
+
 export default function CopyTradingPage() {
   const [sidebarTab, setSidebarTab] = useState('copy-trading');
   const [userCountry, setUserCountry] = useState('Nigeria');
 
   const { getLivePrice } = usePricingEngine();
   const walletEngine = useWalletEngine() as any;
+  // Copy trading uses REAL balance only (bonus funds are not usable here)
+  const availableBalance = walletEngine.balance || 0;
   const isWalletLoading = walletEngine.isWalletLoading;
 
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -54,37 +59,17 @@ export default function CopyTradingPage() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const itemsPerPage = 9;
 
-  // Real-time ticking logic for total balance
-  const [currentTime, setCurrentTime] = useState<number>(Date.now());
-  const [openAiTrades, setOpenAiTrades] = useState<any[]>([]);
-  const [aiMeta, setAiMeta] = useState<Record<string, any>>({});
-
   const [modalConfig, setModalConfig] = useState<{ isOpen: boolean; title?: string; message: string; type: ModalType; }>({
     isOpen: false, message: '', type: 'info'
   });
 
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   const loadData = async () => {
     setIsLoading(true);
 
-    const [profile, tradingData] = await Promise.all([
-      getUserProfile(),
-      getTradingData()
-    ]);
+    const profile = await getUserProfile();
 
     if (profile?.country) setUserCountry(profile.country);
     if (profile?.isPro) setHasPaidAccess(true);
-
-    if (tradingData && tradingData.trades) {
-      setOpenAiTrades(tradingData.trades.filter((t: any) => t.status === 'OPEN'));
-    }
-
-    const storedMeta = JSON.parse(localStorage.getItem('ai_copy_meta') || '{}');
-    setAiMeta(storedMeta);
 
     const stockAssets = TRADING_ASSETS.filter(a => a.type === 'stock');
     const formattedTraders: TraderWithLiveStats[] = TRADERS.map((t, index) => {
@@ -93,7 +78,7 @@ export default function CopyTradingPage() {
 
       return {
         ...t,
-        minCopy: 500,
+        minCopy: MIN_ALLOCATION,
         activeTrade: {
           type: index % 2 === 0 ? 'LONG' : 'SHORT',
           pair: stockAsset.symbol,
@@ -109,8 +94,6 @@ export default function CopyTradingPage() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 10000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -125,46 +108,30 @@ export default function CopyTradingPage() {
     });
   }, [getLivePrice, traders, masterEntries]);
 
-  // Sync the simulated profit with the active trades page
-  const getSimulatedProfit = (allocatedAmount: number, tradeOpenTimeStr?: string, tradeId?: string) => {
-    let startTickingTime = Date.now(); 
-    if (tradeOpenTimeStr) {
-      const openDate = new Date(tradeOpenTimeStr);
-      if (!isNaN(openDate.getTime())) startTickingTime = openDate.getTime();
-    } else if (tradeId && aiMeta[tradeId]?.timestamp) {
-      startTickingTime = aiMeta[tradeId].timestamp;
-    }
-    const msPassed = Math.max(currentTime - startTickingTime, 0);
-    const daysPassed = msPassed / (1000 * 60 * 60 * 24); 
-    return allocatedAmount * 0.25 * daysPassed;
-  };
-
-  const activeAiTrades = useMemo(() => openAiTrades.filter(t => aiMeta[t.id] !== undefined), [openAiTrades, aiMeta]);
-  
-  const totalDailyProfit = useMemo(() => {
-    return activeAiTrades.reduce((sum, trade) => sum + getSimulatedProfit(aiMeta[trade.id]?.allocated || 1000, trade.openTime, trade.id), 0);
-  }, [activeAiTrades, aiMeta, currentTime]);
-
-  const totalAvailableBalance = (walletEngine.balance || 0) + (walletEngine.bonusBalance || 0) + totalDailyProfit;
-
   const showAlert = (message: string, type: ModalType = 'info', title?: string) => {
     setModalConfig({ isOpen: true, message, type, title });
   };
 
   const executeCopyTrade = async (trader: TraderWithLiveStats) => {
+    if (processingId) return; // block double-clicks
+
     const livePrice = getLivePrice(trader.activeTrade.pair);
-    const requestedAmount = parseFloat(allocations[trader.id] ?? '500');
+    const requestedAmount = parseFloat(allocations[trader.id] ?? String(MIN_ALLOCATION));
 
     const tpPrice = parseFloat(takeProfits[trader.id]) || 0;
     const slPrice = parseFloat(stopLosses[trader.id]) || 0;
     const orderType = trader.activeTrade.type === 'LONG' ? 'BUY' : 'SELL';
 
-    if (isNaN(requestedAmount) || requestedAmount < 500) {
-      return showAlert(`The minimum allocation amount for all Master Traders is $500.`, "warning","Invalid Amount");
+    if (isNaN(requestedAmount) || requestedAmount < MIN_ALLOCATION) {
+      return showAlert(`The minimum allocation amount for all Master Traders is $${MIN_ALLOCATION}.`, "warning", "Invalid Amount");
     }
 
-    if (totalAvailableBalance < requestedAmount) {
-      return showAlert(`Insufficient balance. You need $${requestedAmount.toFixed(2)} to mirror this trade.`, "error", "Balance Error");
+    if (availableBalance < requestedAmount) {
+      return showAlert(
+        `Insufficient real balance. You need $${requestedAmount.toFixed(2)} but have $${availableBalance.toFixed(2)}. Bonus funds can't be used for copy trading.`,
+        "error",
+        "Balance Error"
+      );
     }
 
     if (livePrice === 0) {
@@ -182,57 +149,38 @@ export default function CopyTradingPage() {
 
     setProcessingId(trader.id);
 
-    const volume = (requestedAmount * trader.activeTrade.leverage) / livePrice;
-    const fee = requestedAmount * 0.001;
-    const walletToUse = (walletEngine.balance || 0) >= requestedAmount ? 'REAL' : 'BONUS';
-
-    const payload = {
-      symbol: trader.activeTrade.pair,
-      type: orderType,
-      orderType: 'MARKET',
-      marginMode: 'CROSS',
-      leverage: trader.activeTrade.leverage,
-      volume: parseFloat(volume.toFixed(5)),
-      openPrice: livePrice,
-      tp: tpPrice,
-      sl: slPrice,
-      fee: parseFloat(fee.toFixed(2)),
-      walletType: walletToUse as any
-    };
-
-    const res = await openTrade(payload);
-
-    if (res.success && res.ticket) {
-      const updatedMeta = JSON.parse(localStorage.getItem('ai_copy_meta') || '{}');
-      updatedMeta[res.ticket] = {
-        traderName: trader.name,
-        avatar: trader.avatar,
-        strategy: trader.strategy,
-        allocated: requestedAmount,
-        timestamp: Date.now()
-      };
-      localStorage.setItem('ai_copy_meta', JSON.stringify(updatedMeta));
-      setAiMeta(updatedMeta);
-
-      if (walletEngine.refreshWallet) {
-        walletEngine.refreshWallet();
-      }
-
-      showAlert(
-        `Successfully allocated $${requestedAmount.toLocaleString()} to mirror ${trader.name}. View it in Active Trades.`,
-        'success',
-        'Copy Trade Activated'
+    try {
+      const res = await createActiveCopy(
+        parseInt(trader.id) || 1,
+        requestedAmount,
+        livePrice,
+        slPrice > 0 ? slPrice : null,
+        tpPrice > 0 ? tpPrice : null
       );
 
-      setAllocations(prev => ({ ...prev, [trader.id]: '500' }));
-      setTakeProfits(prev => ({ ...prev, [trader.id]: '' }));
-      setStopLosses(prev => ({ ...prev, [trader.id]: '' }));
-      loadData();
-    } else {
-      showAlert("Execution failed in trading engine. Please try again.", "error");
-    }
+      if (res.success) {
+        if (walletEngine.refreshWallet) {
+          walletEngine.refreshWallet();
+        }
 
-    setProcessingId(null);
+        showAlert(
+          `Successfully allocated $${requestedAmount.toLocaleString()} to mirror ${trader.name}. View it in My Copyings.`,
+          'success',
+          'Copy Trade Activated'
+        );
+
+        setAllocations(prev => ({ ...prev, [trader.id]: String(MIN_ALLOCATION) }));
+        setTakeProfits(prev => ({ ...prev, [trader.id]: '' }));
+        setStopLosses(prev => ({ ...prev, [trader.id]: '' }));
+      } else {
+        // Show the real reason instead of a generic message
+        showAlert(res.error || "Execution failed. Please try again.", "error", "Copy Trade Failed");
+      }
+    } catch {
+      showAlert("Unexpected error. Please try again.", "error");
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   const preFilteredTraders = traders.filter(t => {
@@ -279,6 +227,14 @@ export default function CopyTradingPage() {
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full flex flex-col">
           <div className="max-w-7xl mx-auto space-y-8 w-full flex-1 flex flex-col">
 
+            {/* PROTOTYPE NOTICE */}
+            {/* <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl px-4 py-3 text-xs">
+              <Info size={16} className="shrink-0 mt-0.5" />
+              <span>
+                <b>Simulation mode.</b> Copy trading here is a prototype. Trader stats and returns are simulated and do not reflect real market performance.
+              </span>
+            </div> */}
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-6">
               <div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-2 tracking-tight flex items-center gap-3">
@@ -297,7 +253,7 @@ export default function CopyTradingPage() {
                   <div>
                     <div className="text-[10px] text-gray-500 font-bold uppercase">Available Balance</div>
                     <div className="text-sm font-mono font-extrabold text-white">
-                      ${totalAvailableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
                 </div>
@@ -364,7 +320,7 @@ export default function CopyTradingPage() {
                                 </p>
                               </div>
                             </div>
-                            <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg ${trader.activeTrade.type === 'LONG' ? 'bg-green-500/10 text-green-400 border border-green-500/20': 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                            <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg ${trader.activeTrade.type === 'LONG' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                               {trader.activeTrade.type} {trader.activeTrade.leverage}x
                             </span>
                           </div>
@@ -406,9 +362,9 @@ export default function CopyTradingPage() {
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">$</span>
                                 <input
                                   type="number"
-                                  min="500"
-                                  placeholder="500"
-                                  value={allocations[trader.id] !== undefined ? allocations[trader.id]: '500'}
+                                  min={MIN_ALLOCATION}
+                                  placeholder={String(MIN_ALLOCATION)}
+                                  value={allocations[trader.id] !== undefined ? allocations[trader.id] : String(MIN_ALLOCATION)}
                                   onChange={(e) => setAllocations(prev => ({ ...prev, [trader.id]: e.target.value }))}
                                   className="w-full bg-[#151924] border border-white/10 rounded-lg py-1.5 pl-6 pr-3 text-white text-xs font-mono focus:outline-none focus:border-blue-500 transition-colors"
                                 />
@@ -432,7 +388,7 @@ export default function CopyTradingPage() {
                                   type="number"
                                   placeholder="Price (Opt)"
                                   value={stopLosses[trader.id] || ''}
-                                  onChange={(e) => setStopLosses(prev => ({ ...prev, [trader.id]:e.target.value }))}
+                                  onChange={(e) => setStopLosses(prev => ({ ...prev, [trader.id]: e.target.value }))}
                                   className="w-full bg-[#151924] border border-white/10 rounded-lg py-1.5 px-3 text-rose-400 placeholder:text-gray-600 text-xs font-mono focus:outline-none focus:border-blue-500 transition-colors"
                                 />
                               </div>
@@ -441,7 +397,7 @@ export default function CopyTradingPage() {
 
                           <button
                             onClick={() => executeCopyTrade(trader)}
-                            disabled={!isPriceReady || processingId === trader.id}
+                            disabled={!isPriceReady || processingId !== null}
                             className="w-full py-3 bg-white text-black hover:bg-gray-200 rounded-xl text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
                           >
                             {processingId === trader.id ? (
@@ -449,7 +405,7 @@ export default function CopyTradingPage() {
                             ) : !isPriceReady ? (
                               <><Loader2 size={14} className="animate-spin" /> Fetching Market Price...</>
                             ) : (
-                              <><CheckCircle2 size={14} /> Copy Trade (Min: $500)</>
+                              <><CheckCircle2 size={14} /> Copy Trade (Min: ${MIN_ALLOCATION})</>
                             )}
                           </button>
                         </div>
