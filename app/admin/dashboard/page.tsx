@@ -6,23 +6,24 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   ShieldAlert, RefreshCw, Loader2, Wallet,
   TrendingUp, X, Activity, DollarSign,
-  Briefcase, ArrowUpRight, ArrowDownRight, Crown, Copy, Clock, Search, Users, Info, AlertTriangle
+  Briefcase, ArrowUpRight, ArrowDownRight, Crown, Clock
 } from 'lucide-react';
 
 import AdminMetrics from './components/AdminMetrics';
 import UsersTab from './components/UsersTab';
+import CopyTradingMonitor from './components/CopyTradingMonitor';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 import { getAllUsersAdmin, getPendingTransactionsAdmin } from '@/app/actions/admin';
-import { getAllActiveCopiesAdmin } from '@/app/actions/copytrading';
+import { getAllActiveCopiesAdmin, closeCopyTradeAdmin } from '@/app/actions/copytrading';
 import { usePricingEngine } from '@/app/hooks/usePricingEngine';
 import LoadingSpinner from '@/app/components/ui/LoadingSpinner';
 import { TRADERS } from '@/app/config/traders';
 import { TRADING_ASSETS } from '@/app/config/assets';
 
 // SIMULATION SETTINGS - must match app/actions/copytrading.ts and the user's "Active AI Trades" page
-const SIM_RATE_PER_CYCLE = 0.25;
-const CYCLE_MS = 24 * 60 * 60 * 1000;
-const COPY_LEVERAGE = 10;
+export const SIM_RATE_PER_CYCLE = 0.25;
+export const CYCLE_MS = 24 * 60 * 60 * 1000;
+export const COPY_LEVERAGE = 10;
 
 export interface OpenTradePosition {
   id: string;
@@ -83,15 +84,15 @@ export interface AdminCopyTrade {
 }
 
 // Build a display name from profile fields
-const buildName = (first?: string | null, last?: string | null) =>
+export const buildName = (first?: string | null, last?: string | null) =>
   [first, last].filter(Boolean).join(' ').trim();
 
 // Same simulated yield the user sees and the server credits on close (capped at one cycle)
-const simElapsed = (openedAt: number, now: number) => Math.min(Math.max(now - openedAt, 0), CYCLE_MS);
-const simProfit = (allocated: number, openedAt: number, now: number) =>
+export const simElapsed = (openedAt: number, now: number) => Math.min(Math.max(now - openedAt, 0), CYCLE_MS);
+export const simProfit = (allocated: number, openedAt: number, now: number) =>
   allocated * SIM_RATE_PER_CYCLE * (simElapsed(openedAt, now) / CYCLE_MS);
 
-const timeLeft = (openedAt: number, now: number) => {
+export const timeLeft = (openedAt: number, now: number) => {
   const remaining = CYCLE_MS - simElapsed(openedAt, now);
   if (remaining <= 0) return null; // cycle complete
   const h = Math.floor(remaining / 3600000);
@@ -100,10 +101,10 @@ const timeLeft = (openedAt: number, now: number) => {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-const fmtMoney = (n: number) =>
+export const fmtMoney = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const fmtDate = (ms: number) =>
+export const fmtDate = (ms: number) =>
   new Date(ms).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
 export default function AdminDashboardRoot() {
@@ -118,7 +119,6 @@ export default function AdminDashboardRoot() {
   const [copiesRaw, setCopiesRaw] = useState<any[]>([]);
   const [copiesError, setCopiesError] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [copySearch, setCopySearch] = useState('');
 
   const [dashboardTime, setDashboardTime] = useState<number>(Date.now());
 
@@ -150,15 +150,14 @@ export default function AdminDashboardRoot() {
         getAllActiveCopiesAdmin()
       ]);
 
-      // Copy trades come straight from the active_copies table
       if (cRes?.success) {
-        setCopiesRaw((cRes.data as any[]) || []);
+        setCopiesRaw((cRes.data as any[]) ?? []);
         setCopiesError(null);
       } else {
-        setCopiesError(cRes?.error || 'Failed to load copy trades.');
+        setCopiesError(cRes?.error ?? 'Failed to load copy trades.');
       }
 
-      const sanitizedUsers: AdminUser[] = (uData || []).map((user: any) => {
+      const sanitizedUsers: AdminUser[] = (uData ?? []).map((user: any) => {
         let mainBal = parseFloat(user.balance);
         if (isNaN(mainBal)) mainBal = 0;
 
@@ -168,28 +167,25 @@ export default function AdminDashboardRoot() {
           || parseFloat(user.locked_margin);
         if (isNaN(tradeBal)) tradeBal = 0;
 
-        // REGULAR (non copy-trade) positions only. Copy trades are tracked separately above.
-        const openTrades: OpenTradePosition[] = user.openTrades || user.trades || [];
+        const openTrades: OpenTradePosition[] = user.openTrades ?? user.trades ?? [];
 
         let regularMarginSum = 0;
         let regularPnL = 0;
         openTrades.forEach((trade) => {
-          const margin = trade.margin || ((trade.volume * trade.openPrice) / (trade.leverage || 1));
+          const margin = trade.margin ?? ((trade.volume * trade.openPrice) / (trade.leverage ?? 1));
           if (margin && !isNaN(margin)) regularMarginSum += margin;
 
-          const currentPrice = livePriceRef.current(trade.symbol) || trade.openPrice;
+          const currentPrice = livePriceRef.current(trade.symbol) ?? trade.openPrice;
           const isLong = trade.type === 'BUY' || trade.type === 'LONG';
           const diff = isLong ? (currentPrice - trade.openPrice) : (trade.openPrice - currentPrice);
           regularPnL += (diff / trade.openPrice) * (trade.volume * trade.openPrice);
         });
 
-        // Prefer the DB's locked-margin figure; fall back to summing positions (avoids double counting)
         const regularMargin = tradeBal > 0 ? tradeBal : regularMarginSum;
 
-        // Use the profile name (first_name + last_name) when no combined name exists
         const profileName =
-          user.name ||
-          buildName(user.first_name ?? user.firstName, user.last_name ?? user.lastName) ||
+          user.name ??
+          buildName(user.first_name ?? user.firstName, user.last_name ?? user.lastName) ??
           undefined;
 
         return {
@@ -200,14 +196,14 @@ export default function AdminDashboardRoot() {
           regularMargin,
           regularPnL,
           openTrades,
-          isPro: user.isPro || false,
-          proPlanType: user.proPlanType || null,
-          proExpiry: user.proExpiry || null
+          isPro: user.isPro ?? false,
+          proPlanType: user.proPlanType ?? null,
+          proExpiry: user.proExpiry ?? null
         };
       });
 
       setUsers(sanitizedUsers);
-      setPendingTxs(pData || []);
+      setPendingTxs(pData ?? []);
     } catch (error) {
       console.error("Failed to load admin data:", error);
     } finally {
@@ -222,12 +218,11 @@ export default function AdminDashboardRoot() {
     return () => clearInterval(interval);
   }, [loadData]);
 
-  // Normalise raw DB rows into AdminCopyTrade (same symbol/direction logic as the user's Active AI Trades page)
   const copyTrades: AdminCopyTrade[] = useMemo(() => {
     const stockAssets = TRADING_ASSETS.filter(a => a.type === 'stock');
     return copiesRaw.map((c: any) => {
-      const trader = TRADERS.find(t => String(t.id) === String(c.trader_id)) || TRADERS[0];
-      const traderNumId = parseInt(trader.id) || 1;
+      const trader = TRADERS.find(t => String(t.id) === String(c.trader_id)) ?? TRADERS[0];
+      const traderNumId = parseInt(trader.id) ? parseInt(trader.id) : 1;
       const symbol = stockAssets.length > 0
         ? stockAssets[(traderNumId * 7 + 3) % stockAssets.length].symbol
         : '—';
@@ -240,32 +235,31 @@ export default function AdminDashboardRoot() {
         symbol,
         isLong: traderNumId % 2 === 0,
         leverage: COPY_LEVERAGE,
-        allocated: parseFloat(String(c.amount)) || 0,
-        entryPrice: parseFloat(String(c.entry_price)) || 0,
+        allocated: parseFloat(String(c.amount)) ? parseFloat(String(c.amount)) : 0,
+        entryPrice: parseFloat(String(c.entry_price)) ? parseFloat(String(c.entry_price)) : 0,
         sl: c.sl ? parseFloat(String(c.sl)) : 0,
         tp: c.tp ? parseFloat(String(c.tp)) : 0,
         openedAt: new Date(c.created_at).getTime(),
         ownerName: buildName(c.first_name, c.last_name),
-        ownerEmail: c.user_email || ''
+        ownerEmail: c.user_email ?? ''
       };
     });
   }, [copiesRaw]);
 
-  // Users enriched with their copy-trade totals; recomputed every second so profit ticks live
   const enrichedUsers: AdminUser[] = useMemo(() => {
     const byUser = new Map<string, AdminCopyTrade[]>();
     copyTrades.forEach(t => {
-      const list = byUser.get(t.userId) || [];
+      const list = byUser.get(t.userId) ?? [];
       list.push(t);
       byUser.set(t.userId, list);
     });
 
     return users.map(u => {
-      const list = byUser.get(String(u.id)) || [];
+      const list = byUser.get(String(u.id)) ?? [];
       const copyMargin = list.reduce((s, t) => s + t.allocated, 0);
       const copyProfit = list.reduce((s, t) => s + simProfit(t.allocated, t.openedAt, dashboardTime), 0);
-      const regularMargin = u.regularMargin || 0;
-      const regularPnL = u.regularPnL || 0;
+      const regularMargin = u.regularMargin ?? 0;
+      const regularPnL = u.regularPnL ?? 0;
       const tradingBalance = regularMargin + copyMargin;
       const floatingPnL = regularPnL + copyProfit;
       return {
@@ -281,39 +275,26 @@ export default function AdminDashboardRoot() {
   }, [users, copyTrades, dashboardTime]);
 
   const selectedUser = useMemo(
-    () => (selectedUserId ? enrichedUsers.find(u => String(u.id) === selectedUserId) || null : null),
+    () => (selectedUserId ? (enrichedUsers.find(u => String(u.id) === selectedUserId) ?? null) : null),
     [selectedUserId, enrichedUsers]
   );
 
-  const totalSystemLiquidity = enrichedUsers.reduce((acc, curr) => acc + (curr.totalEquity || (curr.balance + curr.tradingBalance)), 0);
+  const totalSystemLiquidity = enrichedUsers.reduce((acc, curr) => acc + (curr.totalEquity ?? (curr.balance + curr.tradingBalance)), 0);
 
-  // Copy monitor rows joined with their owner
-  const monitorRows = useMemo(() => {
-    const q = copySearch.trim().toLowerCase();
-    return copyTrades
-      .map(t => {
-        const owner = enrichedUsers.find(u => String(u.id) === t.userId);
-        return { trade: t, owner };
-      })
-      .filter(({ trade, owner }) => {
-        if (!q) return true;
-        return (
-          (owner?.email || trade.ownerEmail || '').toLowerCase().includes(q) ||
-          (trade.ownerName || owner?.name || '').toLowerCase().includes(q) ||
-          trade.traderName.toLowerCase().includes(q) ||
-          trade.symbol.toLowerCase().includes(q) ||
-          `#${trade.id}`.includes(q)
-        );
-      });
-  }, [copyTrades, enrichedUsers, copySearch]);
-
-  const copyStats = useMemo(() => {
-    const usersCopying = new Set(copyTrades.map(t => t.userId)).size;
-    const totalAllocated = copyTrades.reduce((s, t) => s + t.allocated, 0);
-    const totalProfit = copyTrades.reduce((s, t) => s + simProfit(t.allocated, t.openedAt, dashboardTime), 0);
-    const completed = copyTrades.filter(t => timeLeft(t.openedAt, dashboardTime) === null).length;
-    return { count: copyTrades.length, usersCopying, totalAllocated, totalProfit, completed };
-  }, [copyTrades, dashboardTime]);
+  // NEW: Handler for closing copy trades from the admin side
+  const handleCloseCopyTrade = async (tradeId: number) => {
+    try {
+      const res = await closeCopyTradeAdmin(tradeId);
+      if (res.success) {
+        showAlert(`Successfully closed copy trade #${tradeId} and credited profit to user.`, 'success');
+        loadData(false); // Force a full sync to update user balances
+      } else {
+        showAlert(res.error || 'Failed to close copy trade.', 'error');
+      }
+    } catch (err: any) {
+      showAlert(err.message || 'An error occurred while closing the trade.', 'error');
+    }
+  };
 
   if (isInitialLoad) return <LoadingSpinner label="Synchronizing Admin Desk & User Ledgers..." />;
 
@@ -336,170 +317,21 @@ export default function AdminDashboardRoot() {
             <p className="text-sm text-gray-400 max-w-xl">Total operational control over user accounts, live trade monitoring, real-time position tracking, and wallet overrides.</p>
           </div>
         </div>
-        <button onClick={() => loadData(false)} disabled={isRefreshing} className="shrink-0 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-white transition-all flex items-center gap-2 relative z-10 shadow-lg disabled:opacity-50">
+        <button onClick={() => loadData(false)} disabled={isRefreshing} className="shrink-0 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-whitetransition-all flex items-center gap-2 relative z-10 shadow-lg disabled:opacity-50">
           {isRefreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Refresh System Ledger
         </button>
       </div>
 
       <AdminMetrics usersCount={enrichedUsers.length} pendingCount={pendingTxs.length} totalLiquidity={totalSystemLiquidity} />
 
-      {/* ========================================================================= */}
-      {/* LIVE COPY TRADING MONITOR - every copy trade, who runs it, and its status */}
-      {/* ========================================================================= */}
-      <div className="bg-[#151924] border border-blue-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden mt-6">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-emerald-500"></div>
-
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400">
-              <Copy className="animate-pulse" size={20} />
-            </div>
-            <div>
-              <h3 className="text-lg font-extrabold text-white">Live Copy Trading Monitor</h3>
-              <p className="text-xs text-gray-400 font-medium">Every copy trade started by users, with owner, trader, size, SL/TP and cycle status</p>
-            </div>
-          </div>
-
-          <div className="relative w-full lg:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
-            <input
-              type="text"
-              value={copySearch}
-              onChange={(e) => setCopySearch(e.target.value)}
-              placeholder="Search user, trader, symbol or trade ID..."
-              className="w-full bg-[#0B0E14] border border-white/10 rounded-xl py-2.5 pl-9 pr-4 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Prototype note so the admin knows what the numbers mean */}
-        <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl px-4 py-3 text-xs mb-5">
-          <Info size={16} className="shrink-0 mt-0.5" />
-          <span>
-            <b>Simulated yield.</b> Profit shown is a simulation of {SIM_RATE_PER_CYCLE * 100}% per 24h cycle on the allocated amount (capped at one cycle). It is not tied to real market positions. This is the same figure the user sees and the amount credited when they close the trade.
-          </span>
-        </div>
-
-        {copiesError && (
-          <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 rounded-2xl px-4 py-3 text-xs mb-5">
-            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-            <span><b>Could not load copy trades:</b> {copiesError}</span>
-          </div>
-        )}
-
-        {/* SUMMARY */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
-          <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4">
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Active Copies</div>
-            <div className="text-xl font-mono font-extrabold text-white">{copyStats.count}</div>
-          </div>
-          <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4">
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1 flex items-center gap-1"><Users size={11} /> Users Copying</div>
-            <div className="text-xl font-mono font-extrabold text-white">{copyStats.usersCopying}</div>
-          </div>
-          <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4">
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Total Allocated</div>
-            <div className="text-xl font-mono font-extrabold text-yellow-400">${fmtMoney(copyStats.totalAllocated)}</div>
-          </div>
-          <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4">
-            <div className="text-[10px] text-emerald-500/80 font-bold uppercase tracking-wider mb-1">Simulated Profit Owed</div>
-            <div className="text-xl font-mono font-extrabold text-emerald-400">+${fmtMoney(copyStats.totalProfit)}</div>
-          </div>
-          <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4 col-span-2 lg:col-span-1">
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Cycles Complete</div>
-            <div className="text-xl font-mono font-extrabold text-blue-400">{copyStats.completed}</div>
-          </div>
-        </div>
-
-        {/* ALL COPY TRADES */}
-        {monitorRows.length > 0 ? (
-          <div className="overflow-x-auto bg-[#0B0E14] border border-white/5 rounded-2xl">
-            <table className="w-full text-left font-mono text-xs whitespace-nowrap min-w-[1000px]">
-              <thead>
-                <tr className="border-b border-white/10 text-gray-500 uppercase text-[10px] bg-white/[0.02]">
-                  <th className="p-3.5">Trade</th>
-                  <th className="p-3.5">User</th>
-                  <th className="p-3.5">Master Trader</th>
-                  <th className="p-3.5">Position</th>
-                  <th className="p-3.5">Allocated</th>
-                  <th className="p-3.5">Entry</th>
-                  <th className="p-3.5">TP / SL</th>
-                  <th className="p-3.5">Opened</th>
-                  <th className="p-3.5">Status</th>
-                  <th className="p-3.5 text-right">Sim. Profit</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {monitorRows.map(({ trade, owner }) => {
-                  const remaining = timeLeft(trade.openedAt, dashboardTime);
-                  const profit = simProfit(trade.allocated, trade.openedAt, dashboardTime);
-                  const ownerDisplayName = trade.ownerName || owner?.name || 'Unknown user';
-                  const ownerDisplayEmail = owner?.email || trade.ownerEmail || `user #${trade.userId}`;
-                  return (
-                    <tr
-                      key={trade.id}
-                      onClick={() => owner && setSelectedUserId(String(owner.id))}
-                      className="hover:bg-white/[0.03] transition-colors cursor-pointer"
-                    >
-                      <td className="p-3.5 text-gray-400">#{trade.id}</td>
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-[10px]">
-                            {(ownerDisplayName !== 'Unknown user' ? ownerDisplayName : ownerDisplayEmail).charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="text-white font-bold truncate max-w-[150px]">{ownerDisplayName}</span>
-                            <span className="text-[10px] text-gray-500 truncate max-w-[150px]">{ownerDisplayEmail}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-2">
-                          {trade.avatar && <img src={trade.avatar} alt="" className="w-6 h-6 rounded-md bg-[#151924] border border-white/10" />}
-                          <span className="text-gray-200">{trade.traderName}</span>
-                        </div>
-                      </td>
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-white">{trade.symbol}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${trade.isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                            {trade.isLong ? 'LONG' : 'SHORT'} {trade.leverage}x
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-3.5 text-yellow-400 font-bold">${fmtMoney(trade.allocated)}</td>
-                      <td className="p-3.5 text-gray-300">${fmtMoney(trade.entryPrice)}</td>
-                      <td className="p-3.5">
-                        <span className="text-emerald-400">{trade.tp > 0 ? `$${fmtMoney(trade.tp)}` : '—'}</span>
-                        <span className="text-gray-600"> / </span>
-                        <span className="text-rose-400">{trade.sl > 0 ? `$${fmtMoney(trade.sl)}` : '—'}</span>
-                      </td>
-                      <td className="p-3.5 text-gray-400">{fmtDate(trade.openedAt)}</td>
-                      <td className="p-3.5">
-                        {remaining ? (
-                          <span className="text-blue-400 flex items-center gap-1"><Clock size={11} /> {remaining}</span>
-                        ) : (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
-                            CYCLE COMPLETE · awaiting close
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3.5 text-right font-bold text-emerald-400">+${fmtMoney(profit)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="py-10 flex flex-col items-center justify-center text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
-            <Activity size={32} className="text-gray-600 mb-3" />
-            <p className="text-white font-bold text-sm">{copySearch ? 'No copy trades match your search' : 'No Active Copy Trades'}</p>
-            <p className="text-gray-500 text-xs mt-1">{copySearch ? 'Try a different user, trader or symbol.' : 'Users are not currently mirroring any Master Traders.'}</p>
-          </div>
-        )}
-        <p className="text-[10px] text-gray-500 mt-3">Click any row to open that user's full inspector.</p>
-      </div>
+      <CopyTradingMonitor
+        copyTrades={copyTrades}
+        enrichedUsers={enrichedUsers}
+        dashboardTime={dashboardTime}
+        copiesError={copiesError}
+        onSelectUser={setSelectedUserId}
+        onCloseTrade={handleCloseCopyTrade}
+      />
 
       <div className="mt-6">
         <UsersTab users={enrichedUsers} refreshData={() => loadData(false)} showAlert={showAlert} onSelectUser={(user) => setSelectedUserId(String(user.id))} />
@@ -532,9 +364,15 @@ function UserDetailModal({
   getLivePrice: (symbol: string) => number;
   onClose: () => void;
 }) {
-  const openTrades = user.openTrades || [];
-  const dynamicFloatingPnL = user.floatingPnL || 0;
-  const dynamicTotalEquity = user.totalEquity || 0;
+  const openTrades = user.openTrades ?? [];
+  const dynamicTotalEquity = user.totalEquity ?? 0;
+
+  // Safe extraction to prevent parser issues on copy-paste
+  const displayRegularMargin = user.regularMargin ?? 0;
+  const displayCopyMargin = user.copyMargin ?? 0;
+  const displayCopyProfit = user.copyProfit ?? 0;
+  const displayRegularPnL = user.regularPnL ?? 0;
+  const displayName = user.name ?? 'Trader Account';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
@@ -546,7 +384,7 @@ function UserDetailModal({
             </div>
             <div>
               <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
-                {user.name || 'Trader Account'}
+                {displayName}
                 <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase ${user.role === 'admin' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>
                   {user.role}
                 </span>
@@ -574,32 +412,31 @@ function UserDetailModal({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-[#0B0E14] border border-blue-500/30 p-4 rounded-2xl relative overflow-hidden">
               <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5"><DollarSign size={14} className="text-blue-400" /> Total Live Equity</div>
-              <div className="text-2xl font-mono font-extrabold text-white">${fmtMoney(Math.max(0, dynamicTotalEquity))}</div>
+              <div className="text-2xl font-mono font-extrabold text-white">{"$"}{fmtMoney(Math.max(0, dynamicTotalEquity))}</div>
               <p className="text-[10px] text-gray-400 mt-1">Available Wallet + Trade Capital + PnL (copy profit simulated)</p>
             </div>
             <div className="bg-[#0B0E14] border border-white/5 p-4 rounded-2xl">
               <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5"><Wallet size={14} className="text-green-400" /> Liquid Balance</div>
-              <div className="text-2xl font-mono font-extrabold text-white">${fmtMoney(user.balance)}</div>
+              <div className="text-2xl font-mono font-extrabold text-white">{"$"}{fmtMoney(user.balance)}</div>
               <p className="text-[10px] text-gray-400 mt-1">Unallocated funds ready for withdrawal or trade</p>
             </div>
             <div className="bg-[#0B0E14] border border-white/5 p-4 rounded-2xl">
               <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5"><Briefcase size={14} className="text-yellow-400" /> Capital in Trade</div>
-              <div className="text-2xl font-mono font-extrabold text-yellow-400">${fmtMoney(user.tradingBalance)}</div>
+              <div className="text-2xl font-mono font-extrabold text-yellow-400">{"$"}{fmtMoney(user.tradingBalance)}</div>
               <p className="text-[10px] text-gray-400 mt-1">
-                Regular ${fmtMoney(user.regularMargin || 0)} + Copy ${fmtMoney(user.copyMargin || 0)}
+                Regular {"$"}{fmtMoney(displayRegularMargin)} + Copy {"$"}{fmtMoney(displayCopyMargin)}
               </p>
             </div>
           </div>
 
-          {/* COPY TRADES FOR THIS USER */}
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                <Copy size={16} className="text-blue-400" /> Copy Trades ({copyTrades.length})
+                <Activity size={16} className="text-blue-400" /> Copy Trades ({copyTrades.length})
               </h3>
               {copyTrades.length > 0 && (
                 <div className="text-xs font-mono font-bold flex items-center gap-1 px-3 py-1 rounded-xl border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                  <TrendingUp size={12} /> Simulated profit: +${fmtMoney(user.copyProfit || 0)}
+                  <TrendingUp size={12} /> Simulated profit: +{"$"}{fmtMoney(displayCopyProfit)}
                 </div>
               )}
             </div>
@@ -637,12 +474,12 @@ function UserDetailModal({
                               {t.isLong ? 'LONG' : 'SHORT'} {t.leverage}x
                             </span>
                           </td>
-                          <td className="p-3.5 text-yellow-400 font-bold">${fmtMoney(t.allocated)}</td>
-                          <td className="p-3.5 text-gray-300">${fmtMoney(t.entryPrice)}</td>
+                          <td className="p-3.5 text-yellow-400 font-bold">{"$"}{fmtMoney(t.allocated)}</td>
+                          <td className="p-3.5 text-gray-300">{"$"}{fmtMoney(t.entryPrice)}</td>
                           <td className="p-3.5">
-                            <span className="text-emerald-400">{t.tp > 0 ? `$${fmtMoney(t.tp)}` : '—'}</span>
+                            <span className="text-emerald-400">{t.tp > 0 ? `{"$"}${fmtMoney(t.tp)}` :'—'}</span>
                             <span className="text-gray-600"> / </span>
-                            <span className="text-rose-400">{t.sl > 0 ? `$${fmtMoney(t.sl)}` : '—'}</span>
+                            <span className="text-rose-400">{t.sl > 0 ? `{"$"}${fmtMoney(t.sl)}` : '—'}</span>
                           </td>
                           <td className="p-3.5 text-gray-400">{fmtDate(t.openedAt)}</td>
                           <td className="p-3.5">
@@ -652,7 +489,7 @@ function UserDetailModal({
                               <span className="text-[10px] font-bold text-blue-300">CYCLE COMPLETE</span>
                             )}
                           </td>
-                          <td className="p-3.5 text-right font-bold text-emerald-400">+${fmtMoney(simProfit(t.allocated, t.openedAt, now))}</td>
+                          <td className="p-3.5 text-right font-bold text-emerald-400">+{"$"}{fmtMoney(simProfit(t.allocated, t.openedAt, now))}</td>
                         </tr>
                       );
                     })}
@@ -662,13 +499,12 @@ function UserDetailModal({
             )}
           </div>
 
-          {/* REGULAR POSITIONS */}
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2"><Activity size={16} className="text-blue-400" /> Live Active Trades ({openTrades.length})</h3>
-              {(user.regularPnL || 0) !== 0 && (
-                <div className={`text-xs font-mono font-bold flex items-center gap-1 px-3 py-1 rounded-xl border ${(user.regularPnL || 0) >= 0 ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-                  Unrealized PnL: {(user.regularPnL || 0) >= 0 ? '+' : ''}${(user.regularPnL || 0).toFixed(2)}
+              {displayRegularPnL !== 0 && (
+                <div className={`text-xs font-mono font-bold flex items-center gap-1 px-3 py-1 rounded-xl border ${displayRegularPnL >= 0 ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                  Unrealized PnL: {displayRegularPnL >= 0 ? '+' : ''}{"$"}{(displayRegularPnL).toFixed(2)}
                 </div>
               )}
             </div>
@@ -693,15 +529,15 @@ function UserDetailModal({
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {openTrades.map((trade, idx) => {
-                      const livePrice = getLivePrice(trade.symbol) || trade.openPrice;
+                      const livePrice = getLivePrice(trade.symbol) ?? trade.openPrice;
                       const isLong = trade.type === 'BUY' || trade.type === 'LONG';
                       const diff = isLong ? (livePrice - trade.openPrice) : (trade.openPrice - livePrice);
                       const pnl = (diff / trade.openPrice) * (trade.volume * trade.openPrice);
                       const isProfitable = pnl >= 0;
-                      const calculatedMargin = trade.margin || ((trade.volume * trade.openPrice) / (trade.leverage || 1));
+                      const calculatedMargin = trade.margin ?? ((trade.volume * trade.openPrice) / (trade.leverage ?? 1));
 
                       return (
-                        <tr key={trade.id || idx} className="hover:bg-white/[0.02] transition-colors">
+                        <tr key={trade.id ?? idx} className="hover:bg-white/[0.02] transition-colors">
                           <td className="p-3.5">
                             <div className="flex items-center gap-2">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
@@ -710,14 +546,14 @@ function UserDetailModal({
                               <span className="font-extrabold text-white">{trade.symbol}</span>
                             </div>
                           </td>
-                          <td className="p-3.5 text-gray-300">{trade.leverage || 1}x</td>
-                          <td className="p-3.5 text-gray-300">${trade.openPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                          <td className="p-3.5 text-blue-400 font-bold">${livePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                          <td className="p-3.5 text-yellow-400">${calculatedMargin.toFixed(2)}</td>
+                          <td className="p-3.5 text-gray-300">{trade.leverage ?? 1}x</td>
+                          <td className="p-3.5 text-gray-300">{"$"}{trade.openPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3.5 text-blue-400 font-bold">{"$"}{livePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3.5 text-yellow-400">{"$"}{calculatedMargin.toFixed(2)}</td>
                           <td className={`p-3.5 text-right font-bold ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
                             <div className="flex items-center justify-end gap-1">
                               {isProfitable ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                              {isProfitable ? '+' : ''}${pnl.toFixed(2)}
+                              {isProfitable ? '+' : ''}{"$"}{pnl.toFixed(2)}
                             </div>
                           </td>
                         </tr>

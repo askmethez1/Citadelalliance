@@ -1,6 +1,9 @@
+// PATH: app/actions/admin.ts
+
 "use server";
 
 import { Pool } from 'pg';
+import { getUserRole } from './auth';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -152,6 +155,26 @@ export async function creditUserDepositAdmin(userId: number, amount: number, not
   }
 }
 
+export async function resetAllUserBonusesAdmin() {
+  const role = await getUserRole();
+  if (role !== 'admin') {
+    return { success: false, error: 'Forbidden: admin access required.' };
+  }
+
+  try {
+    const res = await pool.query(
+      'UPDATE users SET has_claimed_bonus = FALSE, bonus_balance = 0'
+    );
+    return { 
+      success: true, 
+      message: `Successfully reset bonuses for ${res.rowCount} users.` 
+    };
+  } catch (error: any) {
+    console.error('Reset bonus error:', error);
+    return { success: false, error: error.message || 'Database error.' };
+  }
+}
+
 // --- USER ROLE & BAN MANAGEMENT ---
 
 export async function toggleUserBanAdmin(userId: number, currentBanStatus: boolean) {
@@ -248,7 +271,7 @@ export async function approveTransactionAdmin(txId: number) {
   try {
     await client.query('BEGIN');
 
-    const txRes = await client.query('SELECT user_id, amount, status FROM transactions WHERE id = $1', [txId]);
+    const txRes = await client.query('SELECT user_id, amount, status FROM transactions WHERE id =$1', [txId]);
     if (txRes.rows.length === 0 || txRes.rows[0].status !== 'Pending') {
       await client.query('ROLLBACK');
       return { success: false, message: 'Transaction not found or already processed.' };

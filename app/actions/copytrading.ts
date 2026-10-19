@@ -281,3 +281,53 @@ export async function updateCopySLTP(id: number, sl: number, tp: number) {
     return { success: false, error: error.message };
   }
 }
+
+// ADMIN ONLY: Force-close any user's active copy trade and immediately credit their balance
+export async function closeCopyTradeAdmin(
+  id: number
+): Promise<{ success: boolean; profit?: number; error?: string }> {
+  // 1. Verify admin role
+  const role = await getUserRole();
+  if (role !== 'admin') {
+    return { success: false, error: 'Forbidden: admin access required.' };
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 2. Delete the trade and retrieve its initial allocation, start time, and owner
+    const del = await client.query(
+      'DELETE FROM active_copies WHERE id = $1 RETURNING amount, created_at, user_id',
+      [id]
+    );
+    
+    if (del.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, error: 'Trade not found or already closed.' };
+    }
+
+    const amount = parseFloat(del.rows[0].amount) || 0;
+    const ownerId = del.rows[0].user_id;
+    const startedAt = new Date(del.rows[0].created_at).getTime();
+    
+    // 3. Calculate simulated profit capped at 1 cycle (matches the frontend simulation perfectly)
+    const elapsed = Math.min(Math.max(Date.now() - startedAt, 0), CYCLE_MS);
+    const profit = parseFloat((amount * SIM_RATE_PER_CYCLE * (elapsed / CYCLE_MS)).toFixed(2));
+
+    // 4. Refund principal + profit to the owner's balance
+    await client.query(
+      'UPDATE users SET balance = balance + $1 WHERE id = $2',
+      [amount + profit, ownerId]
+    );
+
+    await client.query('COMMIT');
+    return { success: true, profit };
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    console.error('closeCopyTradeAdmin error:', error);
+    return { success: false, error: error.message || 'Database error.' };
+  } finally {
+    client.release();
+  }
+}

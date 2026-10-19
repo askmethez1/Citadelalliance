@@ -1,3 +1,5 @@
+// PATH: app/dashboard/wallet/page.tsx
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -108,8 +110,9 @@ export default function WalletPage() {
   };
 
   const handleTransferBonus = async () => {
-    if (bonusBalance < 200) {
-      showAlert(`Bonus must be traded to reach at least $200.00 to unlock withdrawal. Current bonus: $${bonusBalance.toFixed(2)}.`, "warning", "Unlock Condition Not Met");
+    // CHANGED from 200 to 1000
+    if (bonusBalance < 1000) {
+      showAlert(`Bonus must be traded to reach at least $1,000.00 to unlock withdrawal. Current bonus: $${bonusBalance.toFixed(2)}.`, "warning", "Unlock Condition Not Met");
       return;
     }
 
@@ -225,16 +228,13 @@ export default function WalletPage() {
 
   return (
     <div className="h-screen w-full bg-[#0B0E14] text-gray-300 font-sans flex overflow-hidden selection:bg-blue-500/30 relative">
-      {/* SIDEBAR */}
       <Sidebar activeTab={sidebarTab} setActiveTab={setSidebarTab} location={userCountry} />
 
-      {/* MAIN VIEWPORT CONTAINER (100vh ALIGNED WITH SIDEBAR) */}
       <main className="flex-1 flex flex-col h-full min-w-0 overflow-y-auto custom-scrollbar relative">
         <TopHeader />
 
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto space-y-6 sm:space-y-8 pb-16">
           
-          {/* PAGE HEADER */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white mb-2 tracking-tight flex items-center gap-3">
@@ -267,12 +267,11 @@ export default function WalletPage() {
             </div>
           </div>
 
-          {/* BALANCE CARDS GRID */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-[#151924] border border-white/5 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
               <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Total Net Equity</div>
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-white mb-2 truncate">
-                ${liveEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {"$"}{liveEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="text-[10px] text-gray-400">Balance + Open Margin + Live PnL</div>
             </div>
@@ -280,7 +279,7 @@ export default function WalletPage() {
             <div className="bg-[#151924] border border-white/5 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
               <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Available Real Balance</div>
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-blue-400 mb-2 truncate">
-                ${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {"$"}{balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="text-[10px] text-gray-400">Ready for withdrawal or trading</div>
             </div>
@@ -291,15 +290,16 @@ export default function WalletPage() {
                 <Gift size={12} className="text-purple-400" /> Trading Bonus
               </div>
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-purple-400 mb-2 truncate">
-                ${bonusBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {"$"}{bonusBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="flex justify-between items-center mt-1 relative z-10">
-                <span className="text-[10px] text-gray-400">Trade to $200 to withdraw</span>
+                {/* CHANGED FROM 200 TO 1000 */}
+                <span className="text-[10px] text-gray-400">Trade to {"$"}{1000} to withdraw</span>
                 {bonusBalance > 0 && (
                   <button 
                     onClick={handleTransferBonus}
                     disabled={isTransferringBonus}
-                    className="bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 text-purple-300 text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
+                    className="bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 text-purple-300 text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex items-centergap-1 disabled:opacity-50"
                   >
                     {isTransferringBonus ? <Loader2 size={10} className="animate-spin" /> : null}
                     Unlock
@@ -311,13 +311,12 @@ export default function WalletPage() {
             <div className="bg-[#151924] border border-white/5 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
               <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">In Open Positions</div>
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-gray-400 mb-2 truncate">
-                ${lockedMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {"$"}{lockedMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="text-[10px] text-gray-500">Margin utilization: {marginUtilized.toFixed(1)}%</div>
             </div>
           </div>
 
-          {/* ACTION DESK */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
             
             <div className="lg:col-span-2 min-w-0">
@@ -414,7 +413,7 @@ export default function WalletPage() {
                     <div className="space-y-2">
                       <div className="flex justify-between items-center text-xs flex-wrap gap-1">
                         <label className="font-bold text-gray-500 uppercase">Select Asset</label>
-                        <span className="text-gray-400">Available Real Fund: <b className="text-white font-mono">${balance.toFixed(2)}</b></span>
+                        <span className="text-gray-400">Available Real Fund: <b className="text-white font-mono">{"$"}{balance.toFixed(2)}</b></span>
                       </div>
                       <select 
                         value={activeAsset.symbol}
@@ -482,7 +481,7 @@ export default function WalletPage() {
                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">USD</span>
                       </div>
                       <p className="text-[10px] text-yellow-500/80 font-bold tracking-wide">
-                        * Minimum withdrawal amount is $100.00.
+                        * Minimum withdrawal amount is {"$"}{100.00}.
                       </p>
                     </div>
 

@@ -89,7 +89,6 @@ export default function DashboardPage() {
         if (walletData) {
           setHasClaimedBonus(walletData.hasClaimedBonus);
           setLocalBonusBalance(walletData.bonusBalance);
-          // Requires getWalletOverview to return totalDeposited (see wallet-bonus-actions.ts)
           setTotalDeposited(walletData.totalDeposited ?? 0);
         }
 
@@ -179,10 +178,10 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* SIGNUP BONUS (requires $1,000 total deposits) */}
+                {/* SIGNUP BONUS (requires $1,000 wallet balance) */}
                 <BonusClaimBanner
                   hasClaimed={hasClaimedBonus}
-                  totalDeposited={totalDeposited}
+                  currentBalance={balance} // CHANGED TO USE CURRENT WALLET BALANCE
                   notify={showAlert}
                   onClaimed={handleBonusClaimed}
                 />
@@ -201,12 +200,12 @@ export default function DashboardPage() {
                       <Eye size={14} className="text-blue-400 opacity-50 group-hover:opacity-100 transition-opacity" />
                     </div>
                     <div className="text-2xl sm:text-3xl font-mono font-bold text-white mb-2 flex flex-wrap items-center gap-2 relative z-10 truncate">
-                      ${displayTotalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {"$"}{displayTotalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div className="flex flex-col gap-1.5 relative z-10">
                       {displayBonusBalance > 0 && (
                         <span className="px-2 py-0.5 w-max rounded text-[9px] font-bold bg-purple-500/20 text-purple-400 uppercase tracking-wider flex items-center gap-1">
-                          <CheckCircle2 size={10} /> +${displayBonusBalance.toFixed(2)} Bonus
+                          <CheckCircle2 size={10} /> +{"$"}{displayBonusBalance.toFixed(2)} Bonus
                         </span>
                       )}
                       <div className="text-xs text-gray-500 flex items-center gap-1">
@@ -225,7 +224,7 @@ export default function DashboardPage() {
                       <Eye size={14} className="text-blue-400 opacity-50 group-hover:opacity-100 transition-opacity" />
                     </div>
                     <div className={`text-2xl sm:text-3xl font-mono font-bold mb-2 truncate ${floatingPnL >= 0 ? 'text-white' : 'text-gray-300'}`}>
-                      ${liveEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {"$"}{liveEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div className="text-xs flex items-center gap-1 text-gray-500">
                       <TrendingUp size={12} className="text-green-500 shrink-0" /> Live Sync Active
@@ -351,7 +350,7 @@ function AccountBreakdownModal({
                 <DollarSign size={14} className="text-blue-400 shrink-0" /> Total Live Equity
               </div>
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-white truncate">
-                ${liveEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {"$"}{liveEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <p className="text-[10px] text-gray-400 mt-1.5 line-clamp-1">Total Account Value + PnL</p>
             </div>
@@ -362,7 +361,7 @@ function AccountBreakdownModal({
                 <ArrowDownLeft size={14} className="text-green-400 shrink-0" /> Withdrawable Funds
               </div>
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-white truncate">
-                ${Math.max(0, balance - bonusBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {"$"}{Math.max(0, balance - bonusBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <p className="text-[10px] text-gray-400 mt-1.5 line-clamp-1">Liquid capital cleared for withdrawal</p>
             </div>
@@ -373,7 +372,7 @@ function AccountBreakdownModal({
                 <Award size={14} className="text-purple-400 shrink-0" /> Trading Bonus
               </div>
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-purple-400 truncate">
-                ${bonusBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {"$"}{bonusBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <p className="text-[10px] text-gray-400 mt-1.5 line-clamp-1">Tradable funds (Non-withdrawable)</p>
             </div>
@@ -384,7 +383,7 @@ function AccountBreakdownModal({
                 <Briefcase size={14} className="text-yellow-400 shrink-0" /> Capital in Trade
               </div>
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-yellow-400 truncate">
-                ${capitalInTrade.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {"$"}{capitalInTrade.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <p className="text-[10px] text-gray-400 mt-1.5 line-clamp-1">Locked margin in active positions</p>
             </div>
@@ -400,7 +399,7 @@ function AccountBreakdownModal({
                 <div className={`w-max text-xs font-mono font-bold flex items-center gap-1 px-3 py-1 rounded-xl border ${
                   floatingPnL >= 0 ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
                 }`}>
-                  Unrealized PnL: {floatingPnL >= 0 ? '+' : ''}${floatingPnL.toFixed(2)}
+                  Unrealized PnL: {floatingPnL >= 0 ? '+' : ''}{"$"}{floatingPnL.toFixed(2)}
                 </div>
               )}
             </div>
@@ -446,13 +445,13 @@ function AccountBreakdownModal({
                             </div>
                           </td>
                           <td className="p-3 sm:p-4 text-gray-300">{trade.leverage || 1}x</td>
-                          <td className="p-3 sm:p-4 text-gray-300">${trade.openPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                          <td className="p-3 sm:p-4 text-blue-400 font-bold">${livePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                          <td className="p-3 sm:p-4 text-yellow-400">${(margin || 0).toFixed(2)}</td>
+                          <td className="p-3 sm:p-4 text-gray-300">{"$"}{trade.openPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 sm:p-4 text-blue-400 font-bold">{"$"}{livePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 sm:p-4 text-yellow-400">{"$"}{(margin || 0).toFixed(2)}</td>
                           <td className={`p-3 sm:p-4 text-right font-bold ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
                             <div className="flex items-center justify-end gap-1">
                               {isProfitable ? <ArrowUpRight size={14} className="shrink-0" /> : <ArrowDownRight size={14} className="shrink-0" />}
-                              {isProfitable ? '+' : ''}${pnl.toFixed(2)}
+                              {isProfitable ? '+' : ''}{"$"}{pnl.toFixed(2)}
                             </div>
                           </td>
                         </tr>

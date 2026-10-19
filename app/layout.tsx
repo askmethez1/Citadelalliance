@@ -45,7 +45,7 @@ export const metadata: Metadata = {
   authors: [{ name: 'Citadel Alliance Team' }],
   creator: 'Citadel Alliance',
   publisher: 'Citadel Alliance',
-  
+
   openGraph: {
     type: 'website',
     locale: 'en_US',
@@ -62,14 +62,14 @@ export const metadata: Metadata = {
       },
     ],
   },
-  
+
   twitter: {
     card: 'summary_large_image',
     title: 'Citadel Alliance | Institutional Crypto & Copy Trading',
     description: 'Copy expert trading strategies, deposit crypto securely, and trade global markets.',
     images: ['/images/og-image.jpg'],
   },
-  
+
   robots: {
     index: true,
     follow: true,
@@ -81,7 +81,7 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
-  
+
   // Updated icons to match the new files in your public folder
   icons: {
     icon: [
@@ -91,10 +91,10 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-touch-icon.png',
   },
-  
+
   // Link to your PWA/Android manifest file
   manifest: '/site.webmanifest',
-  
+
   alternates: {
     canonical: '/',
   },
@@ -134,7 +134,7 @@ export default function RootLayout({
           </main>
           <Footer />
         </MarketProvider>
-        
+
         {/* Vercel Analytics Component */}
         <Analytics />
       </body>

@@ -8,12 +8,10 @@ import { Gift, CheckCircle2, Loader2, Lock, ArrowUpRight } from 'lucide-react';
 import { claimSignupBonus, transferBonusToReal } from '@/app/actions/wallet';
 import type { ModalType } from '@/app/components/ui/NotificationModal';
 
-// Single source of truth for every bonus rule.
-// (Keep these in sync with the server action, which is the real enforcer.)
 export const BONUS_CONFIG = {
   amount: 100,            // bonus credited on claim
-  requiredDeposit: 1000,  // total completed deposits needed to claim
-  unlockThreshold: 200,   // bonus balance needed before it can be moved to real funds
+  requiredBalance: 1000,  // REQUIRED WALLET BALANCE to claim
+  unlockThreshold: 1000,  // UPDATED: bonus balance needed before it can be moved to real funds
 };
 
 type Notify = (message: string, type?: ModalType, title?: string) => void;
@@ -26,20 +24,20 @@ const fmt = (n: number) =>
 /* ------------------------------------------------------------------ */
 interface BonusClaimBannerProps {
   hasClaimed: boolean;
-  totalDeposited: number;      // sum of COMPLETED deposits
-  onClaimed: () => void;       // e.g. () => { setHasClaimed(true); refreshWallet(); }
+  currentBalance: number;      // Accepts current wallet balance
+  onClaimed: () => void;
   notify: Notify;
 }
 
-export function BonusClaimBanner({ hasClaimed, totalDeposited, onClaimed, notify }: BonusClaimBannerProps) {
+export function BonusClaimBanner({ hasClaimed, currentBalance, onClaimed, notify }: BonusClaimBannerProps) {
   const [isClaiming, setIsClaiming] = useState(false);
 
   if (hasClaimed) return null;
 
-  const { amount, requiredDeposit } = BONUS_CONFIG;
-  const eligible = totalDeposited >= requiredDeposit;
-  const progress = Math.min((totalDeposited / requiredDeposit) * 100, 100);
-  const remaining = Math.max(requiredDeposit - totalDeposited, 0);
+  const { amount, requiredBalance } = BONUS_CONFIG;
+  const eligible = currentBalance >= requiredBalance;
+  const progress = Math.min((currentBalance / requiredBalance) * 100, 100);
+  const remaining = Math.max(requiredBalance - currentBalance, 0);
 
   const handleClaim = async () => {
     if (!eligible || isClaiming) return;
@@ -71,15 +69,15 @@ export function BonusClaimBanner({ hasClaimed, totalDeposited, onClaimed, notify
           </h3>
           <p className="text-xs text-gray-400 mt-0.5">
             {eligible
-              ? 'Deposit requirement met. Trade with bonus funds and double it to unlock withdrawals.'
-              : `Deposit a total of $${requiredDeposit.toLocaleString()} to unlock. $${fmt(remaining)} to go.`}
+              ? 'Balance requirement met. Trade with bonus funds and multiply it to unlock withdrawals.'
+              : `Hold a balance of at least $${requiredBalance.toLocaleString()} to unlock. $${fmt(remaining)} to go.`}
           </p>
 
           {!eligible && (
             <div className="mt-3 max-w-md">
               <div className="flex justify-between text-[10px] font-mono text-gray-500 mb-1">
-                <span>${fmt(totalDeposited)}</span>
-                <span>${requiredDeposit.toLocaleString()}</span>
+                <span>{"$"}{fmt(currentBalance)}</span>
+                <span>{"$"}{requiredBalance.toLocaleString()}</span>
               </div>
               <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
                 <div
@@ -99,7 +97,7 @@ export function BonusClaimBanner({ hasClaimed, totalDeposited, onClaimed, notify
           className="shrink-0 w-full sm:w-auto px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors"
         >
           {isClaiming ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-          Claim ${amount}
+          Claim {"$"}{amount}
         </button>
       ) : (
         <Link
@@ -118,7 +116,7 @@ export function BonusClaimBanner({ hasClaimed, totalDeposited, onClaimed, notify
 /* ------------------------------------------------------------------ */
 interface BonusBalanceCardProps {
   bonusBalance: number;
-  onTransferred: () => void;   // e.g. () => { loadData(); refreshWallet(); }
+  onTransferred: () => void;
   notify: Notify;
 }
 
@@ -154,10 +152,10 @@ export function BonusBalanceCard({ bonusBalance, onTransferred, notify }: BonusB
         <Gift size={12} className="text-purple-400" /> Trading Bonus
       </div>
       <div className="text-xl sm:text-2xl font-mono font-extrabold text-purple-400 mb-2 truncate">
-        ${fmt(bonusBalance)}
+        {"$"}{fmt(bonusBalance)}
       </div>
       <div className="flex justify-between items-center mt-1 relative z-10">
-        <span className="text-[10px] text-gray-400">Trade to ${unlockThreshold} to withdraw</span>
+        <span className="text-[10px] text-gray-400">Trade to {"$"}{unlockThreshold} to withdraw</span>
         {bonusBalance > 0 && (
           <button
             onClick={handleTransfer}

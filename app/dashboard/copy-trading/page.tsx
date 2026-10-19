@@ -30,7 +30,8 @@ interface TraderWithLiveStats extends MasterTrader {
   };
 }
 
-const MIN_ALLOCATION = 500;
+// CHANGED: Minimum allocation is now $1000
+const MIN_ALLOCATION = 1000;
 
 export default function CopyTradingPage() {
   const [sidebarTab, setSidebarTab] = useState('copy-trading');
@@ -173,7 +174,6 @@ export default function CopyTradingPage() {
         setTakeProfits(prev => ({ ...prev, [trader.id]: '' }));
         setStopLosses(prev => ({ ...prev, [trader.id]: '' }));
       } else {
-        // Show the real reason instead of a generic message
         showAlert(res.error || "Execution failed. Please try again.", "error", "Copy Trade Failed");
       }
     } catch {
@@ -227,17 +227,9 @@ export default function CopyTradingPage() {
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full flex flex-col">
           <div className="max-w-7xl mx-auto space-y-8 w-full flex-1 flex flex-col">
 
-            {/* PROTOTYPE NOTICE */}
-            {/* <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl px-4 py-3 text-xs">
-              <Info size={16} className="shrink-0 mt-0.5" />
-              <span>
-                <b>Simulation mode.</b> Copy trading here is a prototype. Trader stats and returns are simulated and do not reflect real market performance.
-              </span>
-            </div> */}
-
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-6">
               <div>
-                <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-2 tracking-tight flex items-center gap-3">
+                <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-2 tracking-tightflex items-center gap-3">
                   <Users className="text-blue-500" size={32} /> Copy Trading Plaza
                 </h1>
                 <p className="text-gray-400 text-sm">Join the AI Network Anniversary. Allocate funds to elite Master Traders.</p>
@@ -253,7 +245,7 @@ export default function CopyTradingPage() {
                   <div>
                     <div className="text-[10px] text-gray-500 font-bold uppercase">Available Balance</div>
                     <div className="text-sm font-mono font-extrabold text-white">
-                      ${availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {"$"}{availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
                 </div>
@@ -320,7 +312,7 @@ export default function CopyTradingPage() {
                                 </p>
                               </div>
                             </div>
-                            <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg ${trader.activeTrade.type === 'LONG' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                            <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg ${trader.activeTrade.type === 'LONG' ? 'bg-green-500/10 text-green-400 border border-green-500/20': 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                               {trader.activeTrade.type} {trader.activeTrade.leverage}x
                             </span>
                           </div>
@@ -328,7 +320,7 @@ export default function CopyTradingPage() {
                           <div className="bg-[#0B0E14] border border-white/5 rounded-xl p-3 mb-4 space-y-3">
                             <div className="flex items-center justify-between font-mono text-xs border-b border-white/5 pb-2">
                               <span className="text-white font-bold">{trader.activeTrade.pair}</span>
-                              <span className="text-gray-300">Mark: ${livePrice > 0 ? livePrice.toFixed(2) : '---'}</span>
+                              <span className="text-gray-300">Mark: {"$"}{livePrice > 0 ? livePrice.toFixed(2) : '---'}</span>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4 text-[10px] text-gray-500 font-mono">
@@ -359,7 +351,7 @@ export default function CopyTradingPage() {
                             <div className="flex items-center justify-between">
                               <span className="text-[11px] text-gray-500 font-bold ml-1 uppercase">Allocation</span>
                               <div className="relative w-28">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">$</span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">{"$"}</span>
                                 <input
                                   type="number"
                                   min={MIN_ALLOCATION}
@@ -388,7 +380,7 @@ export default function CopyTradingPage() {
                                   type="number"
                                   placeholder="Price (Opt)"
                                   value={stopLosses[trader.id] || ''}
-                                  onChange={(e) => setStopLosses(prev => ({ ...prev, [trader.id]: e.target.value }))}
+                                  onChange={(e) => setStopLosses(prev => ({ ...prev, [trader.id]:e.target.value }))}
                                   className="w-full bg-[#151924] border border-white/10 rounded-lg py-1.5 px-3 text-rose-400 placeholder:text-gray-600 text-xs font-mono focus:outline-none focus:border-blue-500 transition-colors"
                                 />
                               </div>
@@ -405,7 +397,7 @@ export default function CopyTradingPage() {
                             ) : !isPriceReady ? (
                               <><Loader2 size={14} className="animate-spin" /> Fetching Market Price...</>
                             ) : (
-                              <><CheckCircle2 size={14} /> Copy Trade (Min: ${MIN_ALLOCATION})</>
+                              <><CheckCircle2 size={14} /> Copy Trade (Min: {"$"}{MIN_ALLOCATION})</>
                             )}
                           </button>
                         </div>

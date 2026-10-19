@@ -13,14 +13,14 @@ const pool = new Pool({
 // NOTE: this is a "use server" file, so these must stay NON-exported.
 // Keep them in sync with BONUS_CONFIG in app/dashboard/components/BonusCard.tsx
 const BONUS_AMOUNT = 100;
-const REQUIRED_DEPOSIT = 1000;
-const UNLOCK_THRESHOLD = 200;
+const REQUIRED_DEPOSIT = 1000; // Now acts as the required wallet balance
+const UNLOCK_THRESHOLD = 1000; // UPDATED: Changed from 200 to 1000
 
 export interface WalletData {
   balance: number;
   bonusBalance: number;
   hasClaimedBonus: boolean;
-  totalDeposited: number; // NEW: sum of completed deposits
+  totalDeposited: number; 
   unrealizedPnL: number;
   country: string;
   email: string;
@@ -46,9 +46,6 @@ async function getCurrentUserId(): Promise<number | null> {
 }
 
 // Sum of COMPLETED deposits for a user.
-// transactions.amount is stored as TEXT (e.g. '+100.00', '-$50.00', '500'),
-// so we strip everything except digits and the decimal point before summing.
-// Accepts an optional client so it can run inside an open DB transaction.
 async function getTotalDeposited(
   userId: number,
   client?: { query: Pool['query'] }
@@ -56,8 +53,8 @@ async function getTotalDeposited(
   const runner = client ?? pool;
   const { rows } = await runner.query(
     `SELECT COALESCE(SUM(
-        NULLIF(regexp_replace(amount::text, '[^0-9.]', '', 'g'), '')::numeric
-      ), 0) AS total
+       NULLIF(regexp_replace(amount::text, '[^0-9.]', '', 'g'), '')::numeric
+     ), 0) AS total
      FROM transactions
      WHERE user_id = $1
        AND type ILIKE '%deposit%'
@@ -105,7 +102,7 @@ export async function getWalletOverview(): Promise<WalletData | null> {
   }
 }
 
-// 2. Claim Signup Bonus (requires $1,000 in total completed deposits)
+// 2. Claim Signup Bonus (requires $1,000 active balance)
 export async function claimSignupBonus(): Promise<{ success: boolean; message: string }> {
   try {
     const userId = await getCurrentUserId();
@@ -115,9 +112,9 @@ export async function claimSignupBonus(): Promise<{ success: boolean; message: s
     try {
       await client.query('BEGIN');
 
-      // Lock the user row so two parallel claims can't both pass the checks
+      // Lock the user row and get their current balance
       const { rows } = await client.query(
-        'SELECT has_claimed_bonus FROM users WHERE id = $1 FOR UPDATE',
+        'SELECT balance, has_claimed_bonus FROM users WHERE id = $1 FOR UPDATE',
         [userId]
       );
       if (rows.length === 0) {
@@ -129,19 +126,19 @@ export async function claimSignupBonus(): Promise<{ success: boolean; message: s
         return { success: false, message: 'Bonus has already been claimed.' };
       }
 
-      // Enforce the deposit requirement on the server
-      const totalDeposited = await getTotalDeposited(userId, client);
-      if (totalDeposited < REQUIRED_DEPOSIT) {
+      // Enforce the balance requirement on the server
+      const currentBalance = parseFloat(rows[0].balance || '0');
+      if (currentBalance < REQUIRED_DEPOSIT) {
         await client.query('ROLLBACK');
         return {
           success: false,
-          message: `Deposit a total of $${REQUIRED_DEPOSIT.toLocaleString()} to unlock your bonus. You have deposited $${totalDeposited.toFixed(2)}.`,
+          message: `Hold a balance of at least $${REQUIRED_DEPOSIT.toLocaleString()} to unlock your bonus. Your current balance is $${currentBalance.toFixed(2)}.`,
         };
       }
 
       // Add bonus to bonus_balance and flag user
       await client.query(
-        'UPDATE users SET has_claimed_bonus = TRUE, bonus_balance = bonus_balance + $1 WHERE id = $2',
+        'UPDATE users SET has_claimed_bonus = TRUE, bonus_balance = bonus_balance + $1 WHERE id =$2',
         [BONUS_AMOUNT, userId]
       );
 
@@ -186,7 +183,7 @@ export async function transferBonusToReal(): Promise<{ success: boolean; message
       const rawBonus = rows[0].bonus_balance;
       const bonus = typeof rawBonus === 'number' ? rawBonus : parseFloat(rawBonus || '0');
 
-      // Double to withdraw requirement
+      // 1000 unlock requirement
       if (bonus < UNLOCK_THRESHOLD) {
         await client.query('ROLLBACK');
         return { success: false, message: `Bonus must be traded to reach at least $${UNLOCK_THRESHOLD.toFixed(2)} to unlock withdrawal. Current bonus: $${bonus.toFixed(2)}.` };
@@ -276,7 +273,7 @@ export async function createWithdrawalRequest(data: {
     }
 
     const rawBalance = userRes.rows[0].balance;
-    const currentBalance = typeof rawBalance === 'number' ? rawBalance : parseFloat(rawBalance || '0.00');
+    const currentBalance = typeof rawBalance === 'number' ? rawBalance : parseFloat(rawBalance ||'0.00');
 
     if (data.amount > currentBalance) {
       await client.query('ROLLBACK');
