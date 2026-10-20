@@ -2,22 +2,15 @@
 
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Copy, Search, Info, AlertTriangle, Users, Clock, Activity, Loader2, XSquare } from 'lucide-react';
-import {
-  AdminCopyTrade,
-  AdminUser,
-  simProfit,
-  timeLeft,
-  fmtMoney,
-  fmtDate,
-  SIM_RATE_PER_CYCLE
-} from '../page';
+import { AdminCopyTrade, AdminUser, fmtMoney, fmtDate } from '../page';
+import { SIM_RATE_PER_CYCLE, getTradeStats, getVolumeAndMark } from '@/src/lib/copySim';
 
 interface CopyTradingMonitorProps {
   copyTrades: AdminCopyTrade[];
   enrichedUsers: AdminUser[];
-  dashboardTime: number;
+  dashboardTime?: number; // no longer used: the monitor runs its own 1s clock so it matches the user view
   copiesError: string | null;
   onSelectUser: (userId: string) => void;
   onCloseTrade?: (tradeId: number) => Promise<void>;
@@ -26,18 +19,21 @@ interface CopyTradingMonitorProps {
 export default function CopyTradingMonitor({
   copyTrades,
   enrichedUsers,
-  dashboardTime,
   copiesError,
   onSelectUser,
   onCloseTrade
 }: CopyTradingMonitorProps) {
   const [copySearch, setCopySearch] = useState('');
   const [closingId, setClosingId] = useState<number | null>(null);
-  
-  // Custom local state for the confirmation dialog
   const [confirmCloseId, setConfirmCloseId] = useState<number | null>(null);
 
-  // Copy monitor rows joined with their owner
+  // Same 1s clock the user's page uses
+  const [now, setNow] = useState<number>(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const monitorRows = useMemo(() => {
     const q = copySearch.trim().toLowerCase();
     return copyTrades
@@ -60,18 +56,16 @@ export default function CopyTradingMonitor({
   const copyStats = useMemo(() => {
     const usersCopying = new Set(copyTrades.map(t => t.userId)).size;
     const totalAllocated = copyTrades.reduce((s, t) => s + t.allocated, 0);
-    const totalProfit = copyTrades.reduce((s, t) => s + simProfit(t.allocated, t.openedAt, dashboardTime), 0);
-    const completed = copyTrades.filter(t => timeLeft(t.openedAt, dashboardTime) === null).length;
-    return { count: copyTrades.length, usersCopying, totalAllocated, totalProfit, completed };
-  }, [copyTrades, dashboardTime]);
+    const totalProfit = copyTrades.reduce((s, t) => s + getTradeStats(t.allocated, t.openedAt, now).profit, 0);
+    const maxCycle = copyTrades.reduce((m, t) => Math.max(m, getTradeStats(t.allocated, t.openedAt, now).currentCycleNumber), 0);
+    return { count: copyTrades.length, usersCopying, totalAllocated, totalProfit, maxCycle };
+  }, [copyTrades, now]);
 
   const handleConfirmClose = async () => {
     if (!onCloseTrade || confirmCloseId === null) return;
-    
     const tradeIdToClose = confirmCloseId;
-    setConfirmCloseId(null); // Hide modal immediately
-    setClosingId(tradeIdToClose); // Show spinner on row
-    
+    setConfirmCloseId(null);
+    setClosingId(tradeIdToClose);
     try {
       await onCloseTrade(tradeIdToClose);
     } finally {
@@ -90,7 +84,7 @@ export default function CopyTradingMonitor({
           </div>
           <div>
             <h3 className="text-lg font-extrabold text-white">Live Copy Trading Monitor</h3>
-            <p className="text-xs text-gray-400 font-medium">Every copy trade started by users,with owner, trader, size, SL/TP and cycle status</p>
+            <p className="text-xs text-gray-400 font-medium">Mirrors exactly what each user sees: position, cycle, simulated mark and profit</p>
           </div>
         </div>
 
@@ -109,7 +103,7 @@ export default function CopyTradingMonitor({
       <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl px-4 py-3 text-xs mb-5">
         <Info size={16} className="shrink-0 mt-0.5" />
         <span>
-          <b>Simulated yield.</b> Profit shown is a simulation of {SIM_RATE_PER_CYCLE * 100}% per 24h cycle on the allocated amount (capped at one cycle). It is not tied to real market positions. This is the same figure the user sees and the amount credited when they close the trade.
+          <b>Simulated yield.</b> Profit is a simulation of {SIM_RATE_PER_CYCLE * 100}% per 24h cycle on the allocated amount, and keeps accruing every cycle until the trade is closed. This is the same figure the user sees and the amount credited when they close the trade.
         </span>
       </div>
 
@@ -132,22 +126,22 @@ export default function CopyTradingMonitor({
         </div>
         <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4">
           <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Total Allocated</div>
-          <div className="text-xl font-mono font-extrabold text-yellow-400">{"$"}{fmtMoney(copyStats.totalAllocated)}</div>
+          <div className="text-xl font-mono font-extrabold text-yellow-400">${fmtMoney(copyStats.totalAllocated)}</div>
         </div>
         <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4">
           <div className="text-[10px] text-emerald-500/80 font-bold uppercase tracking-wider mb-1">Simulated Profit Owed</div>
-          <div className="text-xl font-mono font-extrabold text-emerald-400">+{"$"}{fmtMoney(copyStats.totalProfit)}</div>
+          <div className="text-xl font-mono font-extrabold text-emerald-400">+${fmtMoney(copyStats.totalProfit)}</div>
         </div>
         <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4 col-span-2 lg:col-span-1">
-          <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Cycles Complete</div>
-          <div className="text-xl font-mono font-extrabold text-blue-400">{copyStats.completed}</div>
+          <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Highest Cycle</div>
+          <div className="text-xl font-mono font-extrabold text-blue-400">{copyStats.maxCycle}</div>
         </div>
       </div>
 
       {/* ALL COPY TRADES */}
       {monitorRows.length > 0 ? (
         <div className="overflow-x-auto bg-[#0B0E14] border border-white/5 rounded-2xl">
-          <table className="w-full text-left font-mono text-xs whitespace-nowrap min-w-[1050px]">
+          <table className="w-full text-left font-mono text-xs whitespace-nowrap min-w-[1250px]">
             <thead>
               <tr className="border-b border-white/10 text-gray-500 uppercase text-[10px] bg-white/[0.02]">
                 <th className="p-3.5">Trade</th>
@@ -155,18 +149,22 @@ export default function CopyTradingMonitor({
                 <th className="p-3.5">Master Trader</th>
                 <th className="p-3.5">Position</th>
                 <th className="p-3.5">Allocated</th>
+                <th className="p-3.5">Volume</th>
                 <th className="p-3.5">Entry</th>
+                <th className="p-3.5">Sim. Mark</th>
                 <th className="p-3.5">TP / SL</th>
                 <th className="p-3.5">Opened</th>
-                <th className="p-3.5">Status</th>
+                <th className="p-3.5">Cycle</th>
                 <th className="p-3.5 text-right">Sim. Profit</th>
                 <th className="p-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {monitorRows.map(({ trade, owner }) => {
-                const remaining = timeLeft(trade.openedAt, dashboardTime);
-                const profit = simProfit(trade.allocated, trade.openedAt, dashboardTime);
+                const stats = getTradeStats(trade.allocated, trade.openedAt, now);
+                const { volume, mark } = getVolumeAndMark(
+                  trade.allocated, trade.leverage, trade.entryPrice, trade.isLong, stats.profit
+                );
                 const ownerDisplayName = trade.ownerName || owner?.name || 'Unknown user';
                 const ownerDisplayEmail = owner?.email || trade.ownerEmail || `user #${trade.userId}`;
                 return (
@@ -201,8 +199,10 @@ export default function CopyTradingMonitor({
                         </span>
                       </div>
                     </td>
-                    <td className="p-3.5 text-yellow-400 font-bold">{"$"}{fmtMoney(trade.allocated)}</td>
-                    <td className="p-3.5 text-gray-300">{"$"}{fmtMoney(trade.entryPrice)}</td>
+                    <td className="p-3.5 text-yellow-400 font-bold">${fmtMoney(trade.allocated)}</td>
+                    <td className="p-3.5 text-gray-300">{volume.toFixed(4)}</td>
+                    <td className="p-3.5 text-gray-300">${fmtMoney(trade.entryPrice)}</td>
+                    <td className="p-3.5 text-white">${fmtMoney(mark)}</td>
                     <td className="p-3.5">
                       <span className="text-emerald-400">{trade.tp > 0 ? '$' + fmtMoney(trade.tp) : '—'}</span>
                       <span className="text-gray-600"> / </span>
@@ -210,15 +210,19 @@ export default function CopyTradingMonitor({
                     </td>
                     <td className="p-3.5 text-gray-400">{fmtDate(trade.openedAt)}</td>
                     <td className="p-3.5">
-                      {remaining ? (
-                        <span className="text-blue-400 flex items-center gap-1"><Clock size={11} /> {remaining}</span>
-                      ) : (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
-                          CYCLE COMPLETE · awaiting close
+                      <div className="flex flex-col gap-1 min-w-[110px]">
+                        <span className="text-blue-400 flex items-center gap-1">
+                          <Clock size={11} /> Cycle {stats.currentCycleNumber} · {stats.formattedTimer}
                         </span>
-                      )}
+                        <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-1000"
+                            style={{ width: `${stats.progressPercent}%` }}
+                          />
+                        </div>
+                      </div>
                     </td>
-                    <td className="p-3.5 text-right font-bold text-emerald-400">+{"$"}{fmtMoney(profit)}</td>
+                    <td className="p-3.5 text-right font-bold text-emerald-400">+${fmtMoney(stats.profit)}</td>
                     <td className="p-3.5 text-right">
                       <button
                         onClick={(e) => {
@@ -247,7 +251,6 @@ export default function CopyTradingMonitor({
       )}
       <p className="text-[10px] text-gray-500 mt-3">Click anywhere on a row to open that user's full inspector.</p>
 
-      {/* INTERNAL CONFIRMATION OVERLAY (Doesn't affect the external NotificationModal) */}
       {confirmCloseId !== null && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-[#151924] border border-yellow-500/20 rounded-3xl w-full max-w-md p-6 sm:p-8 shadow-2xl relative text-center">
@@ -256,7 +259,7 @@ export default function CopyTradingMonitor({
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Force Close Trade</h3>
             <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-              Are you sure you want to forcefully close copy trade #{confirmCloseId}? Simulated profit will be credited immediately to the user's wallet.
+              Are you sure you want to forcefully close copy trade #{confirmCloseId}? Principal plus simulated profit will be credited immediately to the user's wallet.
             </p>
             <div className="flex gap-3">
               <button
@@ -275,7 +278,6 @@ export default function CopyTradingMonitor({
           </div>
         </div>
       )}
-
     </div>
   );
 }

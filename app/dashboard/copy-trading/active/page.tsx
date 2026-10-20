@@ -18,9 +18,8 @@ import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 import { TRADERS } from '@/app/config/traders';
 import { TRADING_ASSETS } from '@/app/config/assets';
 
-// SIMULATION SETTINGS - keep in sync with SIM_RATE_PER_CYCLE / CYCLE_MS in app/actions/copytrading.ts
-const SIM_RATE_PER_CYCLE = 0.25;
-const CYCLE_MS = 24 * 60 * 60 * 1000;
+// Shared simulation (same module the admin monitor and server actions use)
+import { getTradeStats as computeStats, getVolumeAndMark } from '@/src/lib/copySim';
 
 interface DBActiveCopy {
   id: number;
@@ -73,9 +72,9 @@ export default function ActiveCopyTradesPage() {
 
       if (copiesRes?.success && copiesRes.data) {
         const newData = copiesRes.data as any[];
-        
+
         setCopies(prev => {
-          // Trigger a silent wallet refresh if a trade was closed remotely
+          // Trigger a silent wallet refresh if a trade was closed remotely (e.g. by an admin)
           if (prev.length > 0 && newData.length < prev.length) {
             if (walletEngineRef.current?.refreshWallet) {
               walletEngineRef.current.refreshWallet();
@@ -124,29 +123,9 @@ export default function ActiveCopyTradesPage() {
     });
   }, [copies]);
 
-  // INFINITE YIELD: Timer resets every 24h, profit continues to scale infinitely (25% per 24h)
-  const getTradeStats = (allocatedAmount: number, startTimestamp: number) => {
-    let msPassed = currentTime - startTimestamp;
-    if (msPassed < 0) msPassed = 0;
-
-    // We removed the Math.min(msPassed, CYCLE_MS) cap here so it runs forever
-    const cyclesPassed = msPassed / CYCLE_MS;
-    const currentCycleNumber = Math.floor(cyclesPassed) + 1;
-    const profit = allocatedAmount * SIM_RATE_PER_CYCLE * cyclesPassed;
-
-    // Reset the timer for the current 24hr cycle visual progress
-    const currentCycleMsPassed = msPassed % CYCLE_MS;
-    const progressPercent = (currentCycleMsPassed / CYCLE_MS) * 100;
-    const msRemaining = Math.max(CYCLE_MS - currentCycleMsPassed, 0);
-
-    const hours = Math.floor(msRemaining / (1000 * 60 * 60));
-    const minutes = Math.floor((msRemaining % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((msRemaining % (1000 * 60)) / 1000);
-
-    const formattedTimer = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-    return { profit, progressPercent, formattedTimer, currentCycleNumber };
-  };
+  // Uncapped yield: the 24h timer resets each cycle, profit keeps scaling (rate lives in app/lib/copySim.ts)
+  const getTradeStats = (allocatedAmount: number, startTimestamp: number) =>
+    computeStats(allocatedAmount, startTimestamp, currentTime);
 
   const handleStopCopying = async (trade: any) => {
     if (closingId !== null) return;
@@ -192,7 +171,10 @@ export default function ActiveCopyTradesPage() {
   };
 
   const totalAllocated = useMemo(() => mappedTrades.reduce((sum, t) => sum + t.allocated, 0), [mappedTrades]);
-  const totalDailyProfit = useMemo(() => mappedTrades.reduce((sum, t) => sum + getTradeStats(t.allocated, t.timestamp).profit, 0), [mappedTrades, currentTime]);
+  const totalDailyProfit = useMemo(
+    () => mappedTrades.reduce((sum, t) => sum + computeStats(t.allocated, t.timestamp, currentTime).profit, 0),
+    [mappedTrades, currentTime]
+  );
 
   if (isLoading) return <DashboardSkeleton activeTab={sidebarTab} location={userCountry} />;
 
@@ -234,7 +216,7 @@ export default function ActiveCopyTradesPage() {
                   </div>
                   <div className="flex flex-col">
                     <span className="text-emerald-400/80 text-[9px] font-bold uppercase tracking-wider">Simulated Profit</span>
-                    <span className="text-white font-mono font-bold text-lg">+{"$"}{totalDailyProfit.toFixed(2)}</span>
+                    <span className="text-white font-mono font-bold text-lg">+${totalDailyProfit.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -244,14 +226,14 @@ export default function ActiveCopyTradesPage() {
                   </div>
                   <div className="flex flex-col">
                     <span className="text-blue-400/80 text-[9px] font-bold uppercase tracking-wider">Total Allocated</span>
-                    <span className="text-white font-mono font-bold text-lg">{"$"}{totalAllocated.toFixed(2)}</span>
+                    <span className="text-white font-mono font-bold text-lg">${totalAllocated.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {mappedTrades.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-32 bg-[#151924] borderborder-white/5 rounded-3xl">
+              <div className="flex flex-col items-center justify-center py-32 bg-[#151924] border border-white/5 rounded-3xl">
                 <Activity size={48} className="text-gray-600 mb-4" />
                 <h2 className="text-xl font-bold text-white mb-2">No Active AI Trades</h2>
                 <p className="text-gray-400 text-sm mb-6">You are not currently mirroring any traders.</p>
@@ -263,11 +245,9 @@ export default function ActiveCopyTradesPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {mappedTrades.map((trade) => {
                   const { profit, progressPercent, formattedTimer, currentCycleNumber } = getTradeStats(trade.allocated, trade.timestamp);
-
-                  const volume = (trade.allocated * trade.leverage) / trade.entryPrice;
-                  const simulatedMark = trade.isLong
-                    ? trade.entryPrice + (profit / volume)
-                    : Math.max(trade.entryPrice - (profit / volume), 0);
+                  const { volume, mark: simulatedMark } = getVolumeAndMark(
+                    trade.allocated, trade.leverage, trade.entryPrice, trade.isLong, profit
+                  );
 
                   const isEditing = editingId === trade.id;
 
@@ -307,14 +287,14 @@ export default function ActiveCopyTradesPage() {
                             <span className="text-white font-bold text-lg">{trade.symbol}</span>
                             <span className="font-mono font-extrabold text-lg flex items-center gap-1 text-green-400">
                               <TrendingUp size={18} />
-                              +{"$"}{profit.toFixed(2)}
+                              +${profit.toFixed(2)}
                             </span>
                           </div>
 
                           <div className="grid grid-cols-2 gap-y-3 mt-4 text-[11px] font-mono border-t border-white/5 pt-3">
                             <div>
                               <div className="text-gray-500 mb-0.5">Allocated</div>
-                              <div className="text-white font-bold">{"$"}{trade.allocated.toFixed(2)}</div>
+                              <div className="text-white font-bold">${trade.allocated.toFixed(2)}</div>
                             </div>
                             <div className="text-right">
                               <div className="text-gray-500 mb-0.5">Volume</div>
@@ -322,12 +302,12 @@ export default function ActiveCopyTradesPage() {
                             </div>
                             <div>
                               <div className="text-gray-500 mb-0.5">Entry Price</div>
-                              <div className="text-gray-300">{"$"}{trade.entryPrice.toFixed(2)}</div>
+                              <div className="text-gray-300">${trade.entryPrice.toFixed(2)}</div>
                             </div>
                             <div className="text-right">
                               <div className="text-gray-500 mb-0.5">Simulated Mark</div>
                               <div className="text-white">
-                                {"$"}{simulatedMark.toFixed(2)}
+                                ${simulatedMark.toFixed(2)}
                               </div>
                             </div>
                           </div>
@@ -358,7 +338,7 @@ export default function ActiveCopyTradesPage() {
                                   className="w-full bg-[#151924] border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none"
                                 />
                               ) : (
-                                <div className="text-emerald-400 font-bold">{trade.tp > 0 ? `{"$"}${trade.tp.toFixed(2)}` : 'None'}</div>
+                                <div className="text-emerald-400 font-bold">{trade.tp > 0 ? `$${trade.tp.toFixed(2)}` : 'None'}</div>
                               )}
                             </div>
 
@@ -371,11 +351,11 @@ export default function ActiveCopyTradesPage() {
                                     placeholder="0.00"
                                     value={editSl}
                                     onChange={(e) => setEditSl(e.target.value)}
-                                    className="w-full bg-[#151924] border border-white/10 roundedpx-2 py-1 text-xs text-white focus:outline-none"
+                                    className="w-full bg-[#151924] border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none"
                                   />
                                 </div>
                               ) : (
-                                <div className="text-rose-400 font-bold">{trade.sl > 0 ? `{"$"}${trade.sl.toFixed(2)}` : 'None'}</div>
+                                <div className="text-rose-400 font-bold">{trade.sl > 0 ? `$${trade.sl.toFixed(2)}` : 'None'}</div>
                               )}
                             </div>
 
@@ -385,14 +365,14 @@ export default function ActiveCopyTradesPage() {
                                   onClick={() => setEditingId(null)}
                                   className="text-gray-400 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded"
                                 >
-                                  <CancelIcon size={12}/> Cancel
+                                  <CancelIcon size={12} /> Cancel
                                 </button>
                                 <button
                                   onClick={() => handleSaveSLTP(trade)}
                                   disabled={isSavingEdit}
                                   className="text-green-400 hover:text-green-300 flex items-center gap-1 text-[10px] bg-green-500/10 px-2 py-1 rounded"
                                 >
-                                  {isSavingEdit ? <Loader2 size={12} className="animate-spin"/> :<Check size={12}/>} Save
+                                  {isSavingEdit ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
                                 </button>
                               </div>
                             )}
