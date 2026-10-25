@@ -12,11 +12,9 @@ import { ChevronLeft, Activity, Square, TrendingUp, Loader2, Edit2, Check, X as 
 
 import { getUserProfile } from '@/app/actions/profile';
 import { getActiveCopies, closeActiveCopy, updateCopySLTP } from '@/app/actions/copytrading';
-import { usePricingEngine } from '@/app/hooks/usePricingEngine';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 
 import { TRADERS } from '@/app/config/traders';
-import { TRADING_ASSETS } from '@/app/config/assets';
 
 // Shared simulation (same module the admin monitor and server actions use)
 import { getTradeStats as computeStats, getVolumeAndMark } from '@/src/lib/copySim';
@@ -36,7 +34,6 @@ export default function ActiveCopyTradesPage() {
   const [sidebarTab, setSidebarTab] = useState('copy-trading');
   const [userCountry, setUserCountry] = useState('Nigeria');
 
-  const { getLivePrice } = usePricingEngine();
   const walletEngine = useWalletEngine() as any;
   const walletEngineRef = useRef(walletEngine);
   walletEngineRef.current = walletEngine;
@@ -96,13 +93,9 @@ export default function ActiveCopyTradesPage() {
   };
 
   const mappedTrades = useMemo(() => {
-    const stockAssets = TRADING_ASSETS.filter(a => a.type === 'stock');
-
     return copies.map(copy => {
       const trader = TRADERS.find(t => String(t.id) === String(copy.trader_id)) || TRADERS[0];
       const traderNumId = parseInt(trader.id) || 1;
-      const stockIndex = (traderNumId * 7 + 3) % stockAssets.length;
-      const symbol = stockAssets[stockIndex].symbol;
 
       const allocated = parseFloat(String(copy.amount)) || 1000;
       const entryPrice = parseFloat(String(copy.entry_price)) || 100;
@@ -111,7 +104,6 @@ export default function ActiveCopyTradesPage() {
       return {
         id: copy.id,
         trader,
-        symbol,
         allocated,
         entryPrice,
         timestamp,
@@ -138,7 +130,7 @@ export default function ActiveCopyTradesPage() {
         setCopies(prev => prev.filter(t => t.id !== trade.id));
         if (walletEngine.refreshWallet) walletEngine.refreshWallet();
         showAlert(
-          `Simulated trade for ${trade.symbol} closed. Balance credited with $${trade.allocated.toFixed(2)} + $${(res.profit ?? 0).toFixed(2)} simulated profit.`,
+          `Copy trade for ${trade.trader.name} closed. Balance credited with $${trade.allocated.toFixed(2)} + $${(res.profit ?? 0).toFixed(2)} simulated profit.`,
           'success',
           'Copy Trade Closed'
         );
@@ -188,13 +180,13 @@ export default function ActiveCopyTradesPage() {
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full flex flex-col">
           <div className="max-w-7xl mx-auto space-y-8 w-full flex-1">
 
-            {/* PROTOTYPE NOTICE */}
-            <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl px-4 py-3 text-xs">
+            {/* Simulation Notice */}
+            {/* <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl px-4 py-3 text-xs">
               <Info size={16} className="shrink-0 mt-0.5" />
               <span>
                 <b>Simulation mode.</b> Profit and the live mark shown here are simulated for demonstration and do not reflect real market positions.
               </span>
-            </div>
+            </div> */}
 
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 border-b border-white/5 pb-6">
               <div className="flex items-center gap-4">
@@ -254,19 +246,21 @@ export default function ActiveCopyTradesPage() {
                   return (
                     <div key={trade.id} className="bg-[#151924] border border-blue-500/50 bg-blue-950/10 rounded-3xl p-6 shadow-xl relative flex flex-col justify-between space-y-4">
                       <div>
+                        {/* Trader Header */}
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-3">
-                            <img src={trade.trader.avatar} alt={trade.trader.name} className="w-12 h-12 rounded-2xl bg-[#0B0E14] border border-white/10 p-1" />
+                            <img src={trade.trader.avatar} alt={trade.trader.name} className="w-12 h-12 rounded-2xl bg-[#0B0E14] border border-white/10 p-1 object-cover" />
                             <div>
                               <h3 className="text-base font-bold text-white">{trade.trader.name}</h3>
                               <p className="text-xs text-gray-500 font-mono">ID: {trade.id}</p>
                             </div>
                           </div>
-                          <span className={`font-mono font-bold text-[10px] px-2.5 py-1 rounded-lg ${trade.isLong ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                            {trade.isLong ? 'LONG' : 'SHORT'} {trade.leverage}x
+                          <span className="font-mono font-bold text-[10px] px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            ACTIVE
                           </span>
                         </div>
 
+                        {/* Cycle Timer */}
                         <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-3 mb-4 space-y-2">
                           <div className="flex items-center justify-between text-xs font-mono">
                             <span className="text-gray-400 flex items-center gap-1.5 text-[11px]">
@@ -282,9 +276,10 @@ export default function ActiveCopyTradesPage() {
                           </div>
                         </div>
 
+                        {/* Profit Card */}
                         <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4 mb-4">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-white font-bold text-lg">{trade.symbol}</span>
+                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Accumulated Profit</span>
                             <span className="font-mono font-extrabold text-lg flex items-center gap-1 text-green-400">
                               <TrendingUp size={18} />
                               +${profit.toFixed(2)}
@@ -312,6 +307,7 @@ export default function ActiveCopyTradesPage() {
                             </div>
                           </div>
 
+                          {/* Take Profit & Stop Loss Info */}
                           <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-white/5 relative group">
                             {!isEditing && (
                               <button
