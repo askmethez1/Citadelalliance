@@ -19,7 +19,6 @@ import { createActiveCopy } from '@/app/actions/copytrading';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 import { TRADERS, MasterTrader } from '@/app/config/traders';
 
-// Minimum allocation is $1000
 const MIN_ALLOCATION = 1000;
 
 export default function CopyTradingPage() {
@@ -27,7 +26,6 @@ export default function CopyTradingPage() {
   const [userCountry, setUserCountry] = useState('Nigeria');
 
   const walletEngine = useWalletEngine() as any;
-  // Copy trading uses REAL balance only (bonus funds are not usable here)
   const availableBalance = walletEngine.balance || 0;
   const isWalletLoading = walletEngine.isWalletLoading;
 
@@ -73,7 +71,7 @@ export default function CopyTradingPage() {
   };
 
   const executeCopyTrade = async (trader: MasterTrader) => {
-    if (processingId) return; // block double-clicks
+    if (processingId) return;
 
     const requestedAmount = parseFloat(allocations[trader.id] ?? String(MIN_ALLOCATION));
 
@@ -93,9 +91,9 @@ export default function CopyTradingPage() {
 
     try {
       const res = await createActiveCopy(
-        parseInt(trader.id) || 1,
+        parseInt(trader.id, 10) || 1,
         requestedAmount,
-        0,
+        100, // Valid entry price
         null,
         null
       );
@@ -163,7 +161,6 @@ export default function CopyTradingPage() {
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full flex flex-col">
           <div className="max-w-7xl mx-auto space-y-8 w-full flex-1 flex flex-col">
 
-            {/* Header Section */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-6">
               <div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-2 tracking-tight flex items-center gap-3">
@@ -189,7 +186,6 @@ export default function CopyTradingPage() {
               </div>
             </div>
 
-            {/* Search Bar */}
             <div className="bg-[#151924] border border-white/5 p-4 rounded-2xl">
               <div className="relative w-full">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={16}/>
@@ -203,7 +199,6 @@ export default function CopyTradingPage() {
               </div>
             </div>
 
-            {/* Traders Grid */}
             <div className="flex-1 flex flex-col justify-center min-h-[40vh]">
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 w-full gap-3 text-blue-500">
@@ -219,7 +214,6 @@ export default function CopyTradingPage() {
                   {currentDisplayedTraders.map((trader) => (
                     <div key={trader.id} className="bg-[#151924] border border-white/5 hover:border-white/20 rounded-3xl p-6 shadow-xl transition-all flex flex-col justify-between">
                       <div>
-                        {/* Trader Profile Header */}
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-3">
                             <img src={trader.avatar} alt={trader.name} className="w-12 h-12 rounded-2xl bg-[#0B0E14] border border-white/10 p-1 object-cover" />
@@ -234,7 +228,6 @@ export default function CopyTradingPage() {
                           </div>
                         </div>
 
-                        {/* Performance Stats */}
                         <div className="bg-[#0B0E14] border border-white/5 rounded-xl p-3 mb-4">
                           <div className="grid grid-cols-2 gap-4 text-[10px] text-gray-500 font-mono">
                             <div className="flex flex-col gap-1">
@@ -259,7 +252,6 @@ export default function CopyTradingPage() {
                         </div>
                       </div>
 
-                      {/* Trade Configuration & Action */}
                       <div className="space-y-3">
                         <div className="bg-[#0B0E14] border border-white/5 p-3 rounded-xl">
                           <div className="flex items-center justify-between">
@@ -296,7 +288,6 @@ export default function CopyTradingPage() {
               )}
             </div>
 
-            {/* Pagination */}
             {!isLoading && preFilteredTraders.length > 0 && (
               <Pagination
                 currentPage={currentPage}

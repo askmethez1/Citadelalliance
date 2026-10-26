@@ -8,10 +8,10 @@ import Sidebar from '../../components/Sidebar';
 import TopHeader from '../../components/TopHeader';
 import DashboardSkeleton from '../../components/DashboardSkeleton';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
-import { ChevronLeft, Activity, Square, TrendingUp, Loader2, Edit2, Check, X as CancelIcon, Clock, Info } from 'lucide-react';
+import { ChevronLeft, Activity, Square, TrendingUp, Loader2, Clock } from 'lucide-react';
 
 import { getUserProfile } from '@/app/actions/profile';
-import { getActiveCopies, closeActiveCopy, updateCopySLTP } from '@/app/actions/copytrading';
+import { getActiveCopies, closeActiveCopy } from '@/app/actions/copytrading';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 
 import { TRADERS } from '@/app/config/traders';
@@ -25,8 +25,6 @@ interface DBActiveCopy {
   trader_id: number;
   amount: string | number;
   entry_price: string | number;
-  sl: string | number | null;
-  tp: string | number | null;
   created_at: string;
 }
 
@@ -42,12 +40,7 @@ export default function ActiveCopyTradesPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
-
   const [closingId, setClosingId] = useState<number | null>(null);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editTp, setEditTp] = useState<string>('');
-  const [editSl, setEditSl] = useState<string>('');
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const [modalConfig, setModalConfig] = useState<{ isOpen: boolean; title?: string; message: string; type: ModalType; }>({
     isOpen: false, message: '', type: 'info'
@@ -95,7 +88,7 @@ export default function ActiveCopyTradesPage() {
   const mappedTrades = useMemo(() => {
     return copies.map(copy => {
       const trader = TRADERS.find(t => String(t.id) === String(copy.trader_id)) || TRADERS[0];
-      const traderNumId = parseInt(trader.id) || 1;
+      const traderNumId = parseInt(trader.id, 10) || 1;
 
       const allocated = parseFloat(String(copy.amount)) || 1000;
       const entryPrice = parseFloat(String(copy.entry_price)) || 100;
@@ -108,14 +101,11 @@ export default function ActiveCopyTradesPage() {
         entryPrice,
         timestamp,
         leverage: 10,
-        sl: copy.sl ? parseFloat(String(copy.sl)) : 0,
-        tp: copy.tp ? parseFloat(String(copy.tp)) : 0,
         isLong: traderNumId % 2 === 0
       };
     });
   }, [copies]);
 
-  // Uncapped yield: the 24h timer resets each cycle, profit keeps scaling (rate lives in app/lib/copySim.ts)
   const getTradeStats = (allocatedAmount: number, startTimestamp: number) =>
     computeStats(allocatedAmount, startTimestamp, currentTime);
 
@@ -144,24 +134,6 @@ export default function ActiveCopyTradesPage() {
     }
   };
 
-  const handleSaveSLTP = async (trade: any) => {
-    if (isSavingEdit) return;
-    setIsSavingEdit(true);
-
-    const newTp = parseFloat(editTp) || 0;
-    const newSl = parseFloat(editSl) || 0;
-
-    const res = await updateCopySLTP(trade.id, newSl, newTp);
-    if (res.success) {
-      setCopies(prev => prev.map(t => t.id === trade.id ? { ...t, tp: newTp, sl: newSl } : t));
-      showAlert(`Take Profit and Stop Loss updated successfully.`, "success", "Modification Complete");
-      setEditingId(null);
-    } else {
-      showAlert(res.error || "Failed to update TP/SL. Please try again.", "error");
-    }
-    setIsSavingEdit(false);
-  };
-
   const totalAllocated = useMemo(() => mappedTrades.reduce((sum, t) => sum + t.allocated, 0), [mappedTrades]);
   const totalDailyProfit = useMemo(
     () => mappedTrades.reduce((sum, t) => sum + computeStats(t.allocated, t.timestamp, currentTime).profit, 0),
@@ -180,14 +152,7 @@ export default function ActiveCopyTradesPage() {
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full flex flex-col">
           <div className="max-w-7xl mx-auto space-y-8 w-full flex-1">
 
-            {/* Simulation Notice */}
-            {/* <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl px-4 py-3 text-xs">
-              <Info size={16} className="shrink-0 mt-0.5" />
-              <span>
-                <b>Simulation mode.</b> Profit and the live mark shown here are simulated for demonstration and do not reflect real market positions.
-              </span>
-            </div> */}
-
+            {/* Header Section */}
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 border-b border-white/5 pb-6">
               <div className="flex items-center gap-4">
                 <Link href="/dashboard/copy-trading" className="p-2 bg-[#151924] border border-white/10 rounded-xl hover:bg-white/5 transition-colors">
@@ -224,6 +189,7 @@ export default function ActiveCopyTradesPage() {
               </div>
             </div>
 
+            {/* Trades Grid */}
             {mappedTrades.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-32 bg-[#151924] border border-white/5 rounded-3xl">
                 <Activity size={48} className="text-gray-600 mb-4" />
@@ -240,8 +206,6 @@ export default function ActiveCopyTradesPage() {
                   const { volume, mark: simulatedMark } = getVolumeAndMark(
                     trade.allocated, trade.leverage, trade.entryPrice, trade.isLong, profit
                   );
-
-                  const isEditing = editingId === trade.id;
 
                   return (
                     <div key={trade.id} className="bg-[#151924] border border-blue-500/50 bg-blue-950/10 rounded-3xl p-6 shadow-xl relative flex flex-col justify-between space-y-4">
@@ -306,74 +270,6 @@ export default function ActiveCopyTradesPage() {
                               </div>
                             </div>
                           </div>
-
-                          {/* Take Profit & Stop Loss Info */}
-                          <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-white/5 relative group">
-                            {!isEditing && (
-                              <button
-                                onClick={() => {
-                                  setEditingId(trade.id);
-                                  setEditTp(trade.tp ? trade.tp.toString() : '');
-                                  setEditSl(trade.sl ? trade.sl.toString() : '');
-                                }}
-                                className="absolute right-0 top-1 text-gray-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white/5 rounded"
-                                title="Edit TP/SL"
-                              >
-                                <Edit2 size={12} />
-                              </button>
-                            )}
-
-                            <div className="pr-2 border-r border-white/5">
-                              <div className="text-emerald-500/80 mb-0.5 text-[10px] uppercase font-bold">Take Profit</div>
-                              {isEditing ? (
-                                <input
-                                  type="number"
-                                  placeholder="0.00"
-                                  value={editTp}
-                                  onChange={(e) => setEditTp(e.target.value)}
-                                  className="w-full bg-[#151924] border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none"
-                                />
-                              ) : (
-                                <div className="text-emerald-400 font-bold">{trade.tp > 0 ? `$${trade.tp.toFixed(2)}` : 'None'}</div>
-                              )}
-                            </div>
-
-                            <div className="pl-2">
-                              <div className="text-rose-500/80 mb-0.5 text-[10px] uppercase font-bold">Stop Loss</div>
-                              {isEditing ? (
-                                <div className="flex gap-1">
-                                  <input
-                                    type="number"
-                                    placeholder="0.00"
-                                    value={editSl}
-                                    onChange={(e) => setEditSl(e.target.value)}
-                                    className="w-full bg-[#151924] border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none"
-                                  />
-                                </div>
-                              ) : (
-                                <div className="text-rose-400 font-bold">{trade.sl > 0 ? `$${trade.sl.toFixed(2)}` : 'None'}</div>
-                              )}
-                            </div>
-
-                            {isEditing && (
-                              <div className="col-span-2 flex items-center justify-end gap-2 mt-2">
-                                <button
-                                  onClick={() => setEditingId(null)}
-                                  className="text-gray-400 hover:text-white flex items-center gap-1 text-[10px] bg-white/5 px-2 py-1 rounded"
-                                >
-                                  <CancelIcon size={12} /> Cancel
-                                </button>
-                                <button
-                                  onClick={() => handleSaveSLTP(trade)}
-                                  disabled={isSavingEdit}
-                                  className="text-green-400 hover:text-green-300 flex items-center gap-1 text-[10px] bg-green-500/10 px-2 py-1 rounded"
-                                >
-                                  {isSavingEdit ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
                         </div>
                       </div>
 

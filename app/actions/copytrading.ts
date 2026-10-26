@@ -11,11 +11,10 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// PROTOTYPE / SIMULATION SETTINGS (non-exported: "use server" files may only export async functions)
-// Keep SIM_RATE_PER_CYCLE and CYCLE_MS in sync with copy-trading/active/page.tsx
+// SIMULATION SETTINGS
 const MIN_ALLOCATION = 500;
-const SIM_RATE_PER_CYCLE = 0.25;           // simulated 25% over one cycle
-const CYCLE_MS = 24 * 60 * 60 * 1000;      // 24h cycle
+const SIM_RATE_PER_CYCLE = 0.25;           // 25% yield per 24h cycle
+const CYCLE_MS = 24 * 60 * 60 * 1000;      // 24h cycle duration
 
 export interface MasterTraderRecord {
   id: number;
@@ -38,7 +37,6 @@ export interface CopyTradingOverview {
   totalTraders: number;
 }
 
-// Same session approach as wallet.ts
 async function getCurrentUserId(): Promise<number | null> {
   const cookieStore = await cookies();
   const session = cookieStore.get('citadel_session');
@@ -50,7 +48,6 @@ async function getCurrentUserId(): Promise<number | null> {
 export async function getCopyTradingData(page: number = 1, limit: number = 9): Promise<CopyTradingOverview> {
   try {
     const userId = await getCurrentUserId();
-
     let userBalance = 0.00;
 
     if (userId) {
@@ -59,7 +56,7 @@ export async function getCopyTradingData(page: number = 1, limit: number = 9): P
     }
 
     const countRes = await pool.query('SELECT COUNT(*) FROM master_traders');
-    let totalTraders = parseInt(countRes.rows[0].count, 10);
+    let totalTraders = parseInt(countRes.rows[0]?.count || '0', 10);
 
     const offset = (page - 1) * limit;
 
@@ -126,27 +123,23 @@ export async function getCopyTradingData(page: number = 1, limit: number = 9): P
   }
 }
 
-// Open a (simulated) copy. Atomic: balance check + deduction + insert happen together or not at all.
 export async function createActiveCopy(
   traderId: number,
   amount: number,
-  entryPrice: number,
-  sl: number | null,
-  tp: number | null
+  entryPrice: number = 100,
+  sl: number | null = null,
+  tp: number | null = null
 ): Promise<{ success: boolean; error?: string }> {
   const userId = await getCurrentUserId();
   if (!userId) return { success: false, error: 'Unauthorized. Please log in.' };
 
-  // Never trust client input
-  if (!Number.isFinite(amount) || amount < MIN_ALLOCATION) {
+  const numAmount = Number(amount);
+  if (!Number.isFinite(numAmount) || numAmount < MIN_ALLOCATION) {
     return { success: false, error: `Minimum allocation is $${MIN_ALLOCATION}.` };
   }
-  if (!Number.isFinite(entryPrice) || entryPrice <= 0) {
-    return { success: false, error: 'Invalid entry price.' };
-  }
-  if (!Number.isInteger(traderId) || traderId <= 0) {
-    return { success: false, error: 'Invalid trader.' };
-  }
+
+  const safeEntryPrice = Number.isFinite(entryPrice) && entryPrice > 0 ? entryPrice : 100.0;
+  const safeTraderId = Number.isInteger(traderId) && traderId > 0 ? traderId : 1;
   const safeSl = sl !== null && Number.isFinite(sl) && sl > 0 ? sl : null;
   const safeTp = tp !== null && Number.isFinite(tp) && tp > 0 ? tp : null;
 
@@ -154,20 +147,21 @@ export async function createActiveCopy(
   try {
     await client.query('BEGIN');
 
-    // Deduct only if enough REAL balance (bonus funds are not used for copy trading)
+    // Deduct only if sufficient balance exists
     const deducted = await client.query(
       'UPDATE users SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING balance',
-      [amount, userId]
+      [numAmount, userId]
     );
+
     if (deducted.rowCount === 0) {
       await client.query('ROLLBACK');
       return { success: false, error: 'Insufficient real balance. Bonus funds cannot be used for copy trading.' };
     }
 
     await client.query(
-      `INSERT INTO active_copies (user_id, trader_id, amount, entry_price, sl, tp)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [userId, traderId, amount, entryPrice, safeSl, safeTp]
+      `INSERT INTO active_copies (user_id, trader_id, amount, entry_price, sl, tp, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [userId, safeTraderId, numAmount, safeEntryPrice, safeSl, safeTp]
     );
 
     await client.query('COMMIT');
@@ -175,7 +169,7 @@ export async function createActiveCopy(
   } catch (error: any) {
     await client.query('ROLLBACK');
     console.error('createActiveCopy error:', error);
-    return { success: false, error: error.message || 'Database error.' };
+    return { success: false, error: error.message || 'Database error occurred.' };
   } finally {
     client.release();
   }
@@ -197,14 +191,11 @@ export async function getActiveCopies() {
   }
 }
 
-// ADMIN ONLY: every active copy trade across all users.
-// Server actions are public endpoints, so the admin check MUST happen here, not just in the UI.
 export async function getAllActiveCopiesAdmin() {
   try {
     const role = await getUserRole();
     if (role !== 'admin') return { success: false, error: 'Forbidden: admin access required.', data: [] };
 
-    // Join the users table so every copy trade carries the owner's profile name (first_name / last_name)
     try {
       const { rows } = await pool.query(
         `SELECT ac.*, u.first_name, u.last_name, u.email AS user_email
@@ -214,7 +205,6 @@ export async function getAllActiveCopiesAdmin() {
       );
       return { success: true, data: rows };
     } catch (joinError) {
-      // If the users columns are named differently, fall back to plain rows so the monitor still works
       console.error('getAllActiveCopiesAdmin join failed, falling back:', joinError);
       const { rows } = await pool.query('SELECT * FROM active_copies ORDER BY created_at DESC');
       return { success: true, data: rows };
@@ -224,7 +214,6 @@ export async function getAllActiveCopiesAdmin() {
   }
 }
 
-// Close a (simulated) copy. Profit is computed HERE from the trade's age; the client no longer sends it.
 export async function closeActiveCopy(
   id: number
 ): Promise<{ success: boolean; profit?: number; error?: string }> {
@@ -235,11 +224,11 @@ export async function closeActiveCopy(
   try {
     await client.query('BEGIN');
 
-    // DELETE ... RETURNING makes closing idempotent: a second call finds nothing and cannot double-credit
     const del = await client.query(
       'DELETE FROM active_copies WHERE id = $1 AND user_id = $2 RETURNING amount, created_at',
       [id, userId]
     );
+
     if (del.rowCount === 0) {
       await client.query('ROLLBACK');
       return { success: false, error: 'Trade not found or already closed.' };
@@ -282,11 +271,9 @@ export async function updateCopySLTP(id: number, sl: number, tp: number) {
   }
 }
 
-// ADMIN ONLY: Force-close any user's active copy trade and immediately credit their balance
 export async function closeCopyTradeAdmin(
   id: number
 ): Promise<{ success: boolean; profit?: number; error?: string }> {
-  // 1. Verify admin role
   const role = await getUserRole();
   if (role !== 'admin') {
     return { success: false, error: 'Forbidden: admin access required.' };
@@ -296,12 +283,11 @@ export async function closeCopyTradeAdmin(
   try {
     await client.query('BEGIN');
 
-    // 2. Delete the trade and retrieve its initial allocation, start time, and owner
     const del = await client.query(
       'DELETE FROM active_copies WHERE id = $1 RETURNING amount, created_at, user_id',
       [id]
     );
-    
+
     if (del.rowCount === 0) {
       await client.query('ROLLBACK');
       return { success: false, error: 'Trade not found or already closed.' };
@@ -310,12 +296,10 @@ export async function closeCopyTradeAdmin(
     const amount = parseFloat(del.rows[0].amount) || 0;
     const ownerId = del.rows[0].user_id;
     const startedAt = new Date(del.rows[0].created_at).getTime();
-    
-    // 3. Calculate simulated profit capped at 1 cycle (matches the frontend simulation perfectly)
+
     const elapsed = Math.min(Math.max(Date.now() - startedAt, 0), CYCLE_MS);
     const profit = parseFloat((amount * SIM_RATE_PER_CYCLE * (elapsed / CYCLE_MS)).toFixed(2));
 
-    // 4. Refund principal + profit to the owner's balance
     await client.query(
       'UPDATE users SET balance = balance + $1 WHERE id = $2',
       [amount + profit, ownerId]
