@@ -15,16 +15,13 @@ import { getActiveCopies, closeActiveCopy } from '@/app/actions/copytrading';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 
 import { TRADERS } from '@/app/config/traders';
-
-// Shared simulation (same module the admin monitor and server actions use)
-import { getTradeStats as computeStats, getVolumeAndMark } from '@/src/lib/copySim';
+import { getTradeStats as computeStats } from '@/src/lib/copySim';
 
 interface DBActiveCopy {
   id: number;
   user_id: number;
   trader_id: number;
   amount: string | number;
-  entry_price: string | number;
   created_at: string;
 }
 
@@ -88,20 +85,14 @@ export default function ActiveCopyTradesPage() {
   const mappedTrades = useMemo(() => {
     return copies.map(copy => {
       const trader = TRADERS.find(t => String(t.id) === String(copy.trader_id)) || TRADERS[0];
-      const traderNumId = parseInt(trader.id, 10) || 1;
-
       const allocated = parseFloat(String(copy.amount)) || 1000;
-      const entryPrice = parseFloat(String(copy.entry_price)) || 100;
       const timestamp = new Date(copy.created_at).getTime();
 
       return {
         id: copy.id,
         trader,
         allocated,
-        entryPrice,
-        timestamp,
-        leverage: 10,
-        isLong: traderNumId % 2 === 0
+        timestamp
       };
     });
   }, [copies]);
@@ -120,7 +111,7 @@ export default function ActiveCopyTradesPage() {
         setCopies(prev => prev.filter(t => t.id !== trade.id));
         if (walletEngine.refreshWallet) walletEngine.refreshWallet();
         showAlert(
-          `Copy trade for ${trade.trader.name} closed. Balance credited with $${trade.allocated.toFixed(2)} + $${(res.profit ?? 0).toFixed(2)} simulated profit.`,
+          `Copy trade for ${trade.trader.name} closed. Balance credited with $${trade.allocated.toFixed(2)} + $${(res.profit ?? 0).toFixed(2)} profit.`,
           'success',
           'Copy Trade Closed'
         );
@@ -135,7 +126,7 @@ export default function ActiveCopyTradesPage() {
   };
 
   const totalAllocated = useMemo(() => mappedTrades.reduce((sum, t) => sum + t.allocated, 0), [mappedTrades]);
-  const totalDailyProfit = useMemo(
+  const totalProfit = useMemo(
     () => mappedTrades.reduce((sum, t) => sum + computeStats(t.allocated, t.timestamp, currentTime).profit, 0),
     [mappedTrades, currentTime]
   );
@@ -172,8 +163,8 @@ export default function ActiveCopyTradesPage() {
                     <TrendingUp size={18} />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-emerald-400/80 text-[9px] font-bold uppercase tracking-wider">Simulated Profit</span>
-                    <span className="text-white font-mono font-bold text-lg">+${totalDailyProfit.toFixed(2)}</span>
+                    <span className="text-emerald-400/80 text-[9px] font-bold uppercase tracking-wider">Accumulated Profit</span>
+                    <span className="text-white font-mono font-bold text-lg">+${totalProfit.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -202,10 +193,7 @@ export default function ActiveCopyTradesPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {mappedTrades.map((trade) => {
-                  const { profit, progressPercent, formattedTimer, currentCycleNumber } = getTradeStats(trade.allocated, trade.timestamp);
-                  const { volume, mark: simulatedMark } = getVolumeAndMark(
-                    trade.allocated, trade.leverage, trade.entryPrice, trade.isLong, profit
-                  );
+                  const { profit, progressPercent, formattedTimer } = getTradeStats(trade.allocated, trade.timestamp);
 
                   return (
                     <div key={trade.id} className="bg-[#151924] border border-blue-500/50 bg-blue-950/10 rounded-3xl p-6 shadow-xl relative flex flex-col justify-between space-y-4">
@@ -216,7 +204,8 @@ export default function ActiveCopyTradesPage() {
                             <img src={trade.trader.avatar} alt={trade.trader.name} className="w-12 h-12 rounded-2xl bg-[#0B0E14] border border-white/10 p-1 object-cover" />
                             <div>
                               <h3 className="text-base font-bold text-white">{trade.trader.name}</h3>
-                              <p className="text-xs text-gray-500 font-mono">ID: {trade.id}</p>
+                              <p className="text-[10px] text-gray-400 font-bold uppercase">{trade.trader.strategy}</p>
+                              <p className="text-xs text-gray-500 font-mono mt-0.5">ID: {trade.id}</p>
                             </div>
                           </div>
                           <span className="font-mono font-bold text-[10px] px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -224,11 +213,11 @@ export default function ActiveCopyTradesPage() {
                           </span>
                         </div>
 
-                        {/* Cycle Timer */}
+                        {/* Timer */}
                         <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-3 mb-4 space-y-2">
                           <div className="flex items-center justify-between text-xs font-mono">
                             <span className="text-gray-400 flex items-center gap-1.5 text-[11px]">
-                              <Clock size={14} className="text-blue-400" /> Cycle {currentCycleNumber} (24h)
+                              <Clock size={14} className="text-blue-400" /> Timer
                             </span>
                             <span className="text-blue-400 font-bold">{formattedTimer}</span>
                           </div>
@@ -240,9 +229,9 @@ export default function ActiveCopyTradesPage() {
                           </div>
                         </div>
 
-                        {/* Profit Card */}
-                        <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4 mb-4">
-                          <div className="flex items-center justify-between mb-2">
+                        {/* Profit & Allocation Card */}
+                        <div className="bg-[#0B0E14] border border-white/5 rounded-2xl p-4 mb-4 space-y-3">
+                          <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Accumulated Profit</span>
                             <span className="font-mono font-extrabold text-lg flex items-center gap-1 text-green-400">
                               <TrendingUp size={18} />
@@ -250,25 +239,9 @@ export default function ActiveCopyTradesPage() {
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-y-3 mt-4 text-[11px] font-mono border-t border-white/5 pt-3">
-                            <div>
-                              <div className="text-gray-500 mb-0.5">Allocated</div>
-                              <div className="text-white font-bold">${trade.allocated.toFixed(2)}</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-gray-500 mb-0.5">Volume</div>
-                              <div className="text-white font-bold">{volume.toFixed(4)}</div>
-                            </div>
-                            <div>
-                              <div className="text-gray-500 mb-0.5">Entry Price</div>
-                              <div className="text-gray-300">${trade.entryPrice.toFixed(2)}</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-gray-500 mb-0.5">Simulated Mark</div>
-                              <div className="text-white">
-                                ${simulatedMark.toFixed(2)}
-                              </div>
-                            </div>
+                          <div className="flex items-center justify-between border-t border-white/5 pt-3 text-xs font-mono">
+                            <span className="text-gray-500">Allocated</span>
+                            <span className="text-white font-bold">${trade.allocated.toFixed(2)}</span>
                           </div>
                         </div>
                       </div>
