@@ -8,20 +8,20 @@ import TopHeader from '../components/TopHeader';
 import DashboardSkeleton from '../components/DashboardSkeleton';
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 import Pagination from '@/app/components/ui/Pagination';
-import { 
-  Wallet, ArrowDownLeft, ArrowUpRight, Copy, Check, 
-  ShieldCheck, AlertCircle, History, Loader2, Gift 
+import {
+  Wallet, ArrowDownLeft, ArrowUpRight, Copy, Check,
+  ShieldCheck, AlertCircle, History, Loader2, Gift
 } from 'lucide-react';
 
-import { 
-  getTransactionHistory, 
-  createWithdrawalRequest, 
-  getWalletOverview, 
-  transferBonusToReal, 
-  TransactionRecord 
+import {
+  getTransactionHistory,
+  createWithdrawalRequest,
+  getWalletOverview,
+  transferBonusToReal,
+  TransactionRecord
 } from '@/app/actions/wallet';
 import { getUserProfile } from '@/app/actions/profile';
-import { getSystemAddresses } from '@/app/actions/admin'; 
+import { getSystemAddresses } from '@/app/actions/admin';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 
 type TabType = 'deposit' | 'withdraw';
@@ -35,7 +35,7 @@ interface DepositMethod {
 export default function WalletPage() {
   const [sidebarTab, setSidebarTab] = useState('wallet');
   const [activeAction, setActiveAction] = useState<TabType>('deposit');
-  
+
   // Central Balance Engine
   const { balance, liveEquity, lockedMargin, marginUtilized, isWalletLoading, refreshWallet } = useWalletEngine();
 
@@ -46,7 +46,7 @@ export default function WalletPage() {
   const [bonusBalance, setBonusBalance] = useState<number>(0);
   const [isTransferringBonus, setIsTransferringBonus] = useState(false);
 
-  // Database System Addresses 
+  // Database System Addresses
   const [sysAddresses, setSysAddresses] = useState({ BTC: '', ETH: '', USDT_TRC20: '', SOL: '' });
 
   // Form States
@@ -96,7 +96,7 @@ export default function WalletPage() {
     if (walletData) {
       setBonusBalance(walletData.bonusBalance);
     }
-    
+
     setTransactions(txs || []);
     setIsLoading(false);
   };
@@ -110,9 +110,8 @@ export default function WalletPage() {
   };
 
   const handleTransferBonus = async () => {
-    // CHANGED from 200 to 1000
     if (bonusBalance < 1000) {
-      showAlert(`Bonus must be traded to reach at least $1,000.00 to unlock withdrawal. Current bonus: $${bonusBalance.toFixed(2)}.`, "warning", "Unlock Condition Not Met");
+      showAlert(`Bonus must be traded to reach at least $1,000.00 to unlock withdrawal. Current bonus:$${bonusBalance.toFixed(2)}.`, "warning", "Unlock Condition Not Met");
       return;
     }
 
@@ -227,14 +226,14 @@ export default function WalletPage() {
   }
 
   return (
-    <div className="h-screen w-full bg-[#0B0E14] text-gray-300 font-sans flex overflow-hidden selection:bg-blue-500/30 relative">
+    <div className="min-h-screen bg-[#0B0E14] text-gray-300 font-sans flex selection:bg-blue-500/30 w-full relative">
       <Sidebar activeTab={sidebarTab} setActiveTab={setSidebarTab} location={userCountry} />
 
-      <main className="flex-1 flex flex-col h-full min-w-0 overflow-y-auto custom-scrollbar relative">
+      <main className="flex-1 flex flex-col min-h-screen relative min-w-0 overflow-x-hidden">
         <TopHeader />
 
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto space-y-6 sm:space-y-8 pb-16">
-          
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white mb-2 tracking-tight flex items-center gap-3">
@@ -247,8 +246,8 @@ export default function WalletPage() {
               <button
                 onClick={() => setActiveAction('deposit')}
                 className={`flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all ${
-                  activeAction === 'deposit' 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                  activeAction === 'deposit'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
@@ -257,8 +256,8 @@ export default function WalletPage() {
               <button
                 onClick={() => setActiveAction('withdraw')}
                 className={`flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all ${
-                  activeAction === 'withdraw' 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                  activeAction === 'withdraw'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
@@ -293,13 +292,12 @@ export default function WalletPage() {
                 {"$"}{bonusBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="flex justify-between items-center mt-1 relative z-10">
-                {/* CHANGED FROM 200 TO 1000 */}
                 <span className="text-[10px] text-gray-400">Trade to {"$"}{1000} to withdraw</span>
                 {bonusBalance > 0 && (
-                  <button 
+                  <button
                     onClick={handleTransferBonus}
                     disabled={isTransferringBonus}
-                    className="bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 text-purple-300 text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex items-centergap-1 disabled:opacity-50"
+                    className="bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 text-purple-300 text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
                   >
                     {isTransferringBonus ? <Loader2 size={10} className="animate-spin" /> : null}
                     Unlock
@@ -318,7 +316,7 @@ export default function WalletPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-            
+
             <div className="lg:col-span-2 min-w-0">
               {activeAction === 'deposit' ? (
                 <div className="bg-[#151924] border border-white/5 rounded-3xl p-5 sm:p-8 shadow-xl space-y-6">
@@ -376,18 +374,18 @@ export default function WalletPage() {
                       <div>
                         <p className="text-xs font-bold text-gray-500 uppercase">Deposit Address ({activeNetwork.name})</p>
                         <div className="flex items-center gap-2 mt-1.5 bg-[#151924] border border-white/10 px-3.5 sm:px-4 py-3 sm:py-3.5 rounded-xl min-w-0">
-                          <input 
-                            type="text" 
-                            readOnly 
-                            value={activeNetwork.address} 
+                          <input
+                            type="text"
+                            readOnly
+                            value={activeNetwork.address}
                             className="bg-transparent font-mono text-xs sm:text-sm text-white flex-1 focus:outline-none truncate min-w-0"
                           />
-                          <button 
+                          <button
                             onClick={copyAddress}
                             className="text-blue-400 hover:text-blue-300 shrink-0 p-1.5 rounded-lg hover:bg-white/5 transition-colors"
                             title="Copy Deposit Address"
                           >
-                            {copied ? <Check size={18} className="text-green-400" /> : <Copy size={18} />}
+                            {copied ? <Check size={18} className="text-green-400" /> : <Copy size={18}/>}
                           </button>
                         </div>
                       </div>
@@ -415,7 +413,7 @@ export default function WalletPage() {
                         <label className="font-bold text-gray-500 uppercase">Select Asset</label>
                         <span className="text-gray-400">Available Real Fund: <b className="text-white font-mono">{"$"}{balance.toFixed(2)}</b></span>
                       </div>
-                      <select 
+                      <select
                         value={activeAsset.symbol}
                         onChange={(e) => {
                           const found = DEPOSIT_METHODS.find(m => m.symbol === e.target.value);
@@ -434,7 +432,7 @@ export default function WalletPage() {
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-500 uppercase">Withdrawal Network</label>
-                      <select 
+                      <select
                         value={selectedNetworkIndex}
                         onChange={(e) => setSelectedNetworkIndex(Number(e.target.value))}
                         className="w-full bg-[#0B0E14] border border-white/10 rounded-xl px-4 py-3 text-white text-xs sm:text-sm focus:outline-none focus:border-blue-500"
@@ -447,8 +445,8 @@ export default function WalletPage() {
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-500 uppercase">Destination Wallet Address</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         placeholder={`Paste ${activeAsset.symbol} (${activeNetwork.name}) address`}
                         value={withdrawAddress}
                         onChange={(e) => setWithdrawAddress(e.target.value)}
@@ -460,8 +458,8 @@ export default function WalletPage() {
                     <div className="space-y-2">
                       <div className="flex justify-between items-center text-xs">
                         <label className="font-bold text-gray-500 uppercase">Amount (USD)</label>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           onClick={() => setWithdrawAmount(balance.toString())}
                           className="text-blue-400 hover:underline font-bold"
                         >
@@ -469,8 +467,8 @@ export default function WalletPage() {
                         </button>
                       </div>
                       <div className="relative">
-                        <input 
-                          type="number" 
+                        <input
+                          type="number"
                           step="any"
                           placeholder="100.00"
                           value={withdrawAmount}
@@ -485,7 +483,7 @@ export default function WalletPage() {
                       </p>
                     </div>
 
-                    <button 
+                    <button
                       type="submit"
                       disabled={isSubmitting}
                       className="w-full py-3.5 sm:py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl font-bold text-xs sm:text-sm transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 mt-4"
@@ -557,8 +555,8 @@ export default function WalletPage() {
                             <p className="text-[10px] text-gray-500">{tx.asset}</p>
                           </td>
                           <td className={`p-3 sm:p-4 font-mono font-bold text-xs whitespace-nowrap ${
-                            tx.type.includes('Deposit') || tx.type.includes('Bonus') || tx.type.includes('Transfer') 
-                              ? 'text-green-400' 
+                            tx.type.includes('Deposit') || tx.type.includes('Bonus') || tx.type.includes('Transfer')
+                              ? 'text-green-400'
                               : 'text-white'
                           }`}>
                             {tx.amount}
@@ -566,8 +564,8 @@ export default function WalletPage() {
                           <td className="p-3 sm:p-4 text-[10px] sm:text-xs font-mono text-gray-400 whitespace-nowrap">{tx.created_at}</td>
                           <td className="p-3 sm:p-4 text-right whitespace-nowrap">
                             <span className={`inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2.5 py-1 rounded-md border ${
-                              tx.status === 'Completed' 
-                                ? 'text-green-400 bg-green-500/10 border-green-500/20' 
+                              tx.status === 'Completed'
+                                ? 'text-green-400 bg-green-500/10 border-green-500/20'
                                 : 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20'
                             }`}>
                               {tx.status}
@@ -580,7 +578,7 @@ export default function WalletPage() {
 
                   {totalPages > 1 && (
                     <div className="mt-6 pt-4 border-t border-white/5">
-                      <Pagination 
+                      <Pagination
                         currentPage={currentPage}
                         totalPages={totalPages}
                         onPageChange={setCurrentPage}
