@@ -1,3 +1,4 @@
+// PATH: app/dashboard/components/Sidebar.tsx
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -6,7 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LineChart, LayoutDashboard, Users, Wallet,
   CreditCard, History, MessageSquare, ShieldAlert, Settings, MapPin,
-  Menu, X, Ban
+  Menu, X, Ban, Award
 } from 'lucide-react';
 import { logoutUser } from '@/app/actions/auth';
 import { getUserProfile } from '@/app/actions/profile';
@@ -96,6 +97,7 @@ export default function Sidebar({ location = "Detecting...", isBanned = false }:
       title: 'System',
       items: [
         { href: '/dashboard/chat', label: 'Trader Chat', icon: MessageSquare, indicator: true },
+        { href: '/dashboard/upgrade-trader', label: 'Account Upgrade', icon: Award },
         { href: '/dashboard/security', label: 'Security & Logs', icon: ShieldAlert },
         { href: '/dashboard/profile', label: 'Profile Settings', icon: Settings },
       ]
