@@ -348,21 +348,160 @@ export async function getProSubscriptionsAdmin() {
 }
 
 // --- MASTER TRADER CREATION ---
+// Requires: ALTER TABLE master_traders ADD COLUMN IF NOT EXISTS avatar TEXT;
 
 export async function createMasterTraderAdmin(data: {
   name: string; strategy: string; winRate: number; totalProfit: number;
-  monthlyReturn: number; activePair: string; tradeType: string; leverage: number;
+  monthlyReturn: number; activePair?: string;
+  tradeType: 'LONG' | 'SHORT' | 'RANDOM'; leverage: number; avatar?: string;
 }) {
+  const role = await getUserRole();
+  if (role !== 'admin') return { success: false, message: 'Forbidden: admin access required.' };
+
   try {
-    await pool.query(
-      `INSERT INTO master_traders (name, strategy, win_rate, total_profit, monthly_return, active_pair, trade_type, leverage)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [data.name, data.strategy, data.winRate, data.totalProfit, data.monthlyReturn, data.activePair, data.tradeType, data.leverage]
+    const name = (data.name || '').trim();
+    if (!name) return { success: false, message: 'Trader name is required.' };
+
+    const nums = [data.winRate, data.totalProfit, data.monthlyReturn, data.leverage];
+    if (nums.some(n => !Number.isFinite(n))) {
+      return { success: false, message: 'Invalid numeric values.' };
+    }
+
+    const dup = await pool.query(
+      'SELECT 1 FROM master_traders WHERE LOWER(TRIM(name)) = LOWER($1) LIMIT 1',
+      [name]
     );
-    return { success: true, message: `Master Trader "${data.name}" published!` };
+    if (dup.rows.length > 0) {
+      return { success: false, message: `A trader named "${name}" already exists.` };
+    }
+
+    let tradeType = String(data.tradeType || '').toUpperCase();
+    if (tradeType === 'RANDOM') tradeType = Math.random() < 0.5 ? 'LONG' : 'SHORT';
+    if (tradeType !== 'LONG' && tradeType !== 'SHORT') {
+      return { success: false, message: 'Trade type must be LONG, SHORT or RANDOM.' };
+    }
+
+    let avatar = (data.avatar || '').trim();
+    const avatarOk =
+      avatar.startsWith('https://') ||
+      (avatar.startsWith('data:image/') && avatar.length <= 400_000);
+    if (!avatarOk) {
+      avatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`;
+    }
+
+    await pool.query(
+      `INSERT INTO master_traders
+        (name, strategy, win_rate, total_profit, monthly_return, active_pair, trade_type, leverage, avatar)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [name, data.strategy, data.winRate, data.totalProfit, data.monthlyReturn,
+       (data.activePair || '').trim() || 'N/A', tradeType, Math.round(data.leverage), avatar]
+    );
+    return { success: true, message: `Master Trader "${name}" published as ${tradeType}!` };
   } catch (error) {
     console.error('Error creating master trader:', error);
     return { success: false, message: 'Failed to create Master Trader.' };
+  }
+}
+
+export interface AdminTrader {
+  id: number;
+  name: string;
+  avatar: string;
+  strategy: string;
+  winRate: number;
+  monthlyReturn: number;
+  totalProfit: number;
+  activePair: string;
+  tradeType: string;
+  leverage: number;
+  activeCopies: number;
+}
+
+// All published master traders (newest first) with how many active copies each has
+export async function getMasterTradersAdmin(): Promise<AdminTrader[]> {
+  const role = await getUserRole();
+  if (role !== 'admin') return [];
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.id, t.name, t.strategy, t.win_rate, t.monthly_return, t.total_profit,
+              t.active_pair, t.trade_type, t.leverage, t.avatar,
+              (SELECT COUNT(*) FROM active_copies c WHERE c.trader_id = t.id) AS copies
+       FROM master_traders t
+       ORDER BY t.id DESC`
+    );
+    return rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      avatar: r.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(r.name)}`,
+      strategy: r.strategy,
+      winRate: parseFloat(r.win_rate),
+      monthlyReturn: parseFloat(r.monthly_return),
+      totalProfit: parseFloat(r.total_profit),
+      activePair: r.active_pair,
+      tradeType: r.trade_type,
+      leverage: Number(r.leverage) || 1,
+      activeCopies: parseInt(r.copies, 10) || 0,
+    }));
+  } catch (error) {
+    console.error('Error fetching master traders:', error);
+    return [];
+  }
+}
+
+export async function deleteMasterTraderAdmin(id: number) {
+  const role = await getUserRole();
+  if (role !== 'admin') return { success: false, message: 'Forbidden: admin access required.' };
+
+  try {
+    const res = await pool.query('DELETE FROM master_traders WHERE id = $1', [id]);
+    if (res.rowCount === 0) return { success: false, message: 'Trader not found.' };
+    return { success: true, message: 'Master Trader deleted.' };
+  } catch (error) {
+    console.error('Error deleting master trader:', error);
+    return { success: false, message: 'Failed to delete Master Trader.' };
+  }
+}
+
+// Keeps the oldest trader for each name, moves any active copies onto it, deletes the rest
+export async function removeDuplicateTradersAdmin() {
+  const role = await getUserRole();
+  if (role !== 'admin') return { success: false, message: 'Forbidden: admin access required.' };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    await client.query(
+      `UPDATE active_copies ac
+       SET trader_id = k.keep_id
+       FROM (
+         SELECT a.id AS dup_id, MIN(b.id) AS keep_id
+         FROM master_traders a
+         JOIN master_traders b
+           ON LOWER(TRIM(a.name)) = LOWER(TRIM(b.name)) AND b.id < a.id
+         GROUP BY a.id
+       ) k
+       WHERE ac.trader_id = k.dup_id`
+    );
+
+    const del = await client.query(
+      `DELETE FROM master_traders a
+       USING master_traders b
+       WHERE a.id > b.id AND LOWER(TRIM(a.name)) = LOWER(TRIM(b.name))`
+    );
+
+    await client.query('COMMIT');
+    return {
+      success: true,
+      message: del.rowCount ? `Removed ${del.rowCount} duplicate trader(s).` : 'No duplicates found.',
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error removing duplicate traders:', error);
+    return { success: false, message: 'Failed to remove duplicates.' };
+  } finally {
+    client.release();
   }
 }
 

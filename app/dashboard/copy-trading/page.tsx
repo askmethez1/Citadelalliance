@@ -15,11 +15,19 @@ import {
 } from 'lucide-react';
 
 import { getUserProfile } from '@/app/actions/profile';
-import { createActiveCopy } from '@/app/actions/copytrading';
+import { createActiveCopy, getPublishedMasterTraders } from '@/app/actions/copytrading';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 import { TRADERS, MasterTrader } from '@/app/config/traders';
 
 const MIN_ALLOCATION = 1000;
+
+type CopyTrader = MasterTrader & {
+  traderId?: number;            // real DB id for admin-created traders
+  winRate?: number;
+  activePair?: string;
+  tradeType?: 'LONG' | 'SHORT';
+  leverage?: number;
+};
 
 export default function CopyTradingPage() {
   const [sidebarTab, setSidebarTab] = useState('copy-trading');
@@ -34,7 +42,7 @@ export default function CopyTradingPage() {
   const [hasPaidAccess, setHasPaidAccess] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  const [traders, setTraders] = useState<MasterTrader[]>([]);
+  const [traders, setTraders] = useState<CopyTrader[]>([]);
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -52,12 +60,38 @@ export default function CopyTradingPage() {
     if (profile?.country) setUserCountry(profile.country);
     if (profile?.isPro) setHasPaidAccess(true);
 
-    const formattedTraders: MasterTrader[] = TRADERS.map((t) => ({
+    // Traders published by the admin (stored in the database)
+    let dbTraders: CopyTrader[] = [];
+    try {
+      const published = await getPublishedMasterTraders();
+      dbTraders = published.map((p) => ({
+        id: `db-${p.id}`,
+        traderId: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        strategy: p.strategy,
+        pnl30d: `+${p.monthlyReturn.toFixed(1)}%`,
+        roi7d: parseFloat((p.monthlyReturn / 4).toFixed(1)),
+        copiers: 40 + ((p.id * 37) % 360),
+        maxCopiers: 500,
+        aum: `$${(p.totalProfit * 8 / 1000).toFixed(0)}K`,
+        minCopy: MIN_ALLOCATION,
+        winRate: p.winRate,
+        activePair: p.activePair,
+        tradeType: p.tradeType,
+        leverage: p.leverage,
+      })) as unknown as CopyTrader[];
+    } catch (e) {
+      console.error('Failed to load published traders', e);
+    }
+
+    const staticTraders: CopyTrader[] = TRADERS.map((t) => ({
       ...t,
       minCopy: MIN_ALLOCATION,
     }));
 
-    setTraders(formattedTraders);
+    // Admin-added traders show first
+    setTraders([...dbTraders, ...staticTraders]);
     setIsLoading(false);
     setIsInitialLoad(false);
   };
@@ -70,7 +104,7 @@ export default function CopyTradingPage() {
     setModalConfig({ isOpen: true, message, type, title });
   };
 
-  const executeCopyTrade = async (trader: MasterTrader) => {
+  const executeCopyTrade = async (trader: CopyTrader) => {
     if (processingId) return;
 
     const requestedAmount = parseFloat(allocations[trader.id] ?? String(MIN_ALLOCATION));
@@ -91,7 +125,7 @@ export default function CopyTradingPage() {
 
     try {
       const res = await createActiveCopy(
-        parseInt(trader.id, 10) || 1,
+        trader.traderId ?? (parseInt(trader.id, 10) || 1),
         requestedAmount,
         100, // Valid entry price
         null,
@@ -250,6 +284,17 @@ export default function CopyTradingPage() {
                             </div>
                           </div>
                         </div>
+
+                        {trader.tradeType && (
+                          <div className="flex items-center justify-between bg-[#0B0E14] border border-white/5 rounded-xl px-3 py-2 mb-4 text-[10px] font-mono">
+                            <span className={`px-2 py-0.5 rounded-md font-bold ${
+                              trader.tradeType === 'SHORT' ? 'bg-red-500/15 text-red-400' : 'bg-green-500/15 text-green-400'
+                            }`}>
+                              {trader.tradeType} {trader.leverage}x
+                            </span>
+                            {trader.winRate !== undefined && <span className="text-gray-400">Win {trader.winRate}%</span>}
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-3">

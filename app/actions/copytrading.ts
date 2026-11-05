@@ -37,12 +37,51 @@ export interface CopyTradingOverview {
   totalTraders: number;
 }
 
+export interface PublishedTrader {
+  id: number;
+  name: string;
+  avatar: string;
+  strategy: string;
+  winRate: number;
+  totalProfit: number;
+  monthlyReturn: number;
+  activePair: string;
+  tradeType: 'LONG' | 'SHORT';
+  leverage: number;
+}
+
 async function getCurrentUserId(): Promise<number | null> {
   const cookieStore = await cookies();
   const session = cookieStore.get('citadel_session');
   if (!session?.value) return null;
   const userId = parseInt(session.value, 10);
   return isNaN(userId) ? null : userId;
+}
+
+// Traders published by the admin (newest first). Used by the Copy Trading Plaza.
+export async function getPublishedMasterTraders(): Promise<PublishedTrader[]> {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, strategy, win_rate, total_profit, monthly_return,
+              active_pair, trade_type, leverage, avatar
+       FROM master_traders ORDER BY id DESC`
+    );
+    return rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      avatar: r.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(r.name)}`,
+      strategy: r.strategy,
+      winRate: parseFloat(r.win_rate),
+      totalProfit: parseFloat(r.total_profit),
+      monthlyReturn: parseFloat(r.monthly_return),
+      activePair: r.active_pair,
+      tradeType: (r.trade_type === 'SHORT' ? 'SHORT' : 'LONG') as 'LONG' | 'SHORT',
+      leverage: Number(r.leverage) || 1,
+    }));
+  } catch (e) {
+    console.error('getPublishedMasterTraders error:', e);
+    return [];
+  }
 }
 
 export async function getCopyTradingData(page: number = 1, limit: number = 9): Promise<CopyTradingOverview> {
@@ -61,7 +100,7 @@ export async function getCopyTradingData(page: number = 1, limit: number = 9): P
     const offset = (page - 1) * limit;
 
     const { rows } = await pool.query(
-      `SELECT id, name, strategy, win_rate, total_profit, monthly_return, active_pair, trade_type, leverage
+      `SELECT id, name, strategy, win_rate, total_profit, monthly_return, active_pair, trade_type, leverage, avatar
        FROM master_traders
        ORDER BY id ASC
        LIMIT $1 OFFSET $2`,
@@ -74,7 +113,7 @@ export async function getCopyTradingData(page: number = 1, limit: number = 9): P
       traders = rows.map(r => ({
         id: r.id,
         name: r.name,
-        avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${r.name.replace(/ /g, '')}`,
+        avatar: r.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(r.name)}`,
         strategy: r.strategy,
         winRate: parseFloat(r.win_rate),
         totalProfit: parseFloat(r.total_profit),

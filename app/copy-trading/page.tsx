@@ -9,14 +9,14 @@ import DashboardSkeleton from '@/app/dashboard/components/DashboardSkeleton';
 
 import NotificationModal, { ModalType } from '@/app/components/ui/NotificationModal';
 import Pagination from '@/app/components/ui/Pagination';
-import { 
-  Users, TrendingUp, TrendingDown, 
+import {
+  Users, TrendingUp, TrendingDown,
   Search, Play, Activity, Loader2, Wallet, Users2, ShieldCheck, CheckCircle2, Lock, ArrowRight
 } from 'lucide-react';
 
 import { getUserProfile } from '@/app/actions/profile';
 import { openTrade } from '@/app/actions/trading';
-import { usePricingEngine } from '@/app/hooks/usePricingEngine'; 
+import { usePricingEngine } from '@/app/hooks/usePricingEngine';
 import { useWalletEngine } from '@/app/hooks/useWalletEngine';
 import { TRADING_ASSETS } from '@/app/config/assets';
 
@@ -35,9 +35,9 @@ interface TraderWithLiveStats extends MasterTrader {
 export default function CopyTradingPage() {
   const [sidebarTab, setSidebarTab] = useState('copy-trading');
   const [userCountry, setUserCountry] = useState('Nigeria');
-  
+
   const { getLivePrice } = usePricingEngine();
-  
+
   // Real Balance Sync via Wallet Engine
   const walletEngine = useWalletEngine() as any;
   const totalAvailableBalance = (walletEngine.balance || 0) + (walletEngine.bonusBalance || 0);
@@ -47,10 +47,10 @@ export default function CopyTradingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasPaidAccess, setHasPaidAccess] = useState(false); // DB Access State
   const [processingId, setProcessingId] = useState<string | null>(null);
-  
+
   const [traders, setTraders] = useState<TraderWithLiveStats[]>([]);
   const [masterEntries, setMasterEntries] = useState<Record<string, number>>({});
-  
+
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const [takeProfits, setTakeProfits] = useState<Record<string, string>>({});
   const [stopLosses, setStopLosses] = useState<Record<string, string>>({});
@@ -66,16 +66,16 @@ export default function CopyTradingPage() {
 
   const loadData = async () => {
     setIsLoading(true);
-    
+
     // Fetch profile
     const profile = await getUserProfile();
     if (profile?.country) setUserCountry(profile.country);
-    
+
     // Check if user has isPro flag from DB
     if (profile?.isPro) {
       setHasPaidAccess(true);
     }
-    
+
     // Map our static TRADERS to have an active trade direction/pair
     const formattedTraders: TraderWithLiveStats[] = TRADERS.map((t, index) => {
       const asset = TRADING_ASSETS[index % TRADING_ASSETS.length];
@@ -118,7 +118,7 @@ export default function CopyTradingPage() {
   const executeCopyTrade = async (trader: TraderWithLiveStats) => {
     const livePrice = getLivePrice(trader.activeTrade.pair);
     const requestedAmount = parseFloat(allocations[trader.id] ?? '10'); // Default to $10
-    
+
     const tpPrice = parseFloat(takeProfits[trader.id]) || 0;
     const slPrice = parseFloat(stopLosses[trader.id]) || 0;
     const orderType = trader.activeTrade.type === 'LONG' ? 'BUY' : 'SELL';
@@ -127,12 +127,12 @@ export default function CopyTradingPage() {
     if (isNaN(requestedAmount) || requestedAmount < 10) {
       return showAlert(`The minimum allocation amount for all Master Traders is $10.`, "warning", "Invalid Amount");
     }
-    
+
     // Check against Real Synced Balance
     if (totalAvailableBalance < requestedAmount) {
       return showAlert(`Insufficient balance. You need $${requestedAmount.toFixed(2)} to mirror this trade.`, "error", "Balance Error");
     }
-    
+
     if (livePrice === 0) {
       return showAlert("Awaiting live market data. Please try again in a few seconds.", "warning", "Fetching Data");
     }
@@ -185,13 +185,13 @@ export default function CopyTradingPage() {
       if (walletEngine.refreshWallet) {
         walletEngine.refreshWallet();
       }
-      
+
       showAlert(
         `Successfully allocated $${requestedAmount.toLocaleString()} to mirror ${trader.name}. View it in Active Trades.`,
         'success',
         'Copy Trade Activated'
       );
-      
+
       // Reset inputs to default $10
       setAllocations(prev => ({ ...prev, [trader.id]: '10' }));
       setTakeProfits(prev => ({ ...prev, [trader.id]: '' }));
@@ -205,9 +205,9 @@ export default function CopyTradingPage() {
 
   // FILTERING AND PAGINATION LOGIC
   const preFilteredTraders = traders.filter(t => {
-    const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           t.activeTrade.pair.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     if (filterType === 'ALL') return matchesSearch;
     return matchesSearch && t.activeTrade.type === filterType;
   });
@@ -237,7 +237,7 @@ export default function CopyTradingPage() {
             <div className="bg-[#151924] border border-white/5 rounded-3xl p-8 md:p-12 max-w-2xl w-full text-center shadow-2xl relative overflow-hidden">
               <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
               <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
-              
+
               <div className="relative z-10">
                 <div className="w-20 h-20 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
                   <Lock size={36} className="text-blue-500" />
@@ -268,7 +268,7 @@ export default function CopyTradingPage() {
 
         <div className="flex-1 p-4 sm:p-6 lg:p-8 w-full flex flex-col">
           <div className="max-w-7xl mx-auto space-y-8 w-full flex-1 flex flex-col">
-            
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-6">
               <div>
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-2 tracking-tight flex items-center gap-3">
@@ -281,7 +281,7 @@ export default function CopyTradingPage() {
                 <Link href="/dashboard/copy-trading/active" className="flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-blue-600/20 w-full sm:w-auto justify-center">
                   <Activity size={18} /> My Copyings
                 </Link>
-                
+
                 <div className="flex items-center gap-3 bg-[#151924] border border-white/10 px-5 py-3 rounded-xl w-full sm:w-auto">
                   <Wallet size={18} className="text-gray-400" />
                   <div>
@@ -297,11 +297,11 @@ export default function CopyTradingPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-[#151924] border border-white/5 p-4 rounded-2xl">
               <div className="relative w-full sm:w-96">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={16}/>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search Master Trader or Pair..." 
+                  placeholder="Search Master Trader or Pair..."
                   className="w-full bg-[#0B0E14] border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
@@ -312,8 +312,8 @@ export default function CopyTradingPage() {
                     key={type}
                     onClick={() => setFilterType(type)}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                      filterType === type 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                      filterType === type
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                         : 'bg-[#0B0E14] border border-white/10 text-gray-400 hover:text-white'
                     }`}
                   >
@@ -338,7 +338,7 @@ export default function CopyTradingPage() {
                   {currentDisplayedTraders.map((trader) => {
                     const livePrice = getLivePrice(trader.activeTrade.pair);
                     const isPriceReady = livePrice > 0;
-                    
+
                     return (
                       <div key={trader.id} className="bg-[#151924] border border-white/5 hover:border-white/20 rounded-3xl p-6 shadow-xl transition-all flex flex-col justify-between">
                         <div>
@@ -404,7 +404,7 @@ export default function CopyTradingPage() {
                                 />
                               </div>
                             </div>
-                            
+
                             <div className="grid grid-cols-2 gap-2 border-t border-white/5 pt-3">
                               <div>
                                 <span className="text-[10px] text-gray-500 font-bold ml-1 uppercase block mb-1">Take Profit</span>
