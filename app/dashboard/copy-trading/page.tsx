@@ -24,9 +24,6 @@ const MIN_ALLOCATION = 1000;
 type CopyTrader = MasterTrader & {
   traderId?: number;            // real DB id for admin-created traders
   winRate?: number;
-  activePair?: string;
-  tradeType?: 'LONG' | 'SHORT';
-  leverage?: number;
 };
 
 export default function CopyTradingPage() {
@@ -77,9 +74,6 @@ export default function CopyTradingPage() {
         aum: `$${(p.totalProfit * 8 / 1000).toFixed(0)}K`,
         minCopy: MIN_ALLOCATION,
         winRate: p.winRate,
-        activePair: p.activePair,
-        tradeType: p.tradeType,
-        leverage: p.leverage,
       })) as unknown as CopyTrader[];
     } catch (e) {
       console.error('Failed to load published traders', e);
@@ -285,14 +279,10 @@ export default function CopyTradingPage() {
                           </div>
                         </div>
 
-                        {trader.tradeType && (
+                        {trader.winRate !== undefined && (
                           <div className="flex items-center justify-between bg-[#0B0E14] border border-white/5 rounded-xl px-3 py-2 mb-4 text-[10px] font-mono">
-                            <span className={`px-2 py-0.5 rounded-md font-bold ${
-                              trader.tradeType === 'SHORT' ? 'bg-red-500/15 text-red-400' : 'bg-green-500/15 text-green-400'
-                            }`}>
-                              {trader.tradeType} {trader.leverage}x
-                            </span>
-                            {trader.winRate !== undefined && <span className="text-gray-400">Win {trader.winRate}%</span>}
+                            <span className="text-gray-500 uppercase font-bold">Historical Win Rate</span>
+                            <span className="text-gray-300 font-bold">{trader.winRate}%</span>
                           </div>
                         )}
                       </div>

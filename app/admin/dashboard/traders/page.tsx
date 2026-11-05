@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { UserPlus, Upload, Dices, TrendingUp, TrendingDown, Trash2, Users, Loader2, Eraser, AlertTriangle } from 'lucide-react';
+import { UserPlus, Upload, Dices, Trash2, Users, Loader2, Eraser, AlertTriangle } from 'lucide-react';
 import {
   createMasterTraderAdmin,
   getMasterTradersAdmin,
@@ -107,12 +107,10 @@ const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 const between = (min: number, max: number, d = 1) => Number((Math.random() * (max - min) + min).toFixed(d));
 const mid = (r: [number, number]) => ((r[0] + r[1]) / 2).toFixed(1);
 
-type TradeMode = 'LONG' | 'SHORT' | 'RANDOM';
-
 const emptyForm = () => ({
   name: '', strategy: STRATEGIES[0].name, winRate: '88.5',
   totalProfit: '50000', monthlyReturn: '22.4',
-  tradeType: 'LONG' as TradeMode, leverage: 20,
+  leverage: 20,
   avatar: AVATAR_PRESETS[0],
 });
 
@@ -144,7 +142,6 @@ export default function TradersTab() {
     isOpen: false, message: '', type: 'info'
   });
 
-  // Custom Confirmation Modal State
   const [confirmConfig, setConfirmConfig] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void }>({
     isOpen: false, title: '', message: '', onConfirm: () => {}
   });
@@ -216,7 +213,6 @@ export default function TradersTab() {
       monthlyReturn: String(between(s.monthlyReturn[0], s.monthlyReturn[1])),
       totalProfit: String(Math.round(between(15000, 250000, 0) / 100) * 100),
       leverage: Math.round(between(s.leverage[0], s.leverage[1], 0)),
-      tradeType: 'RANDOM',
     });
   };
 
@@ -227,11 +223,13 @@ export default function TradersTab() {
     setSubmitting(true);
     try {
       const res = await createMasterTraderAdmin({
-        ...traderForm,
+        name: traderForm.name,
+        strategy: traderForm.strategy,
         winRate: parseFloat(traderForm.winRate),
         totalProfit: parseFloat(traderForm.totalProfit),
         monthlyReturn: parseFloat(traderForm.monthlyReturn),
         leverage: Number(traderForm.leverage),
+        avatar: traderForm.avatar,
       });
       if (res.success) {
         showAlert(res.message, 'success', 'Master Trader Added');
@@ -314,7 +312,7 @@ export default function TradersTab() {
             <p className="text-xs text-gray-400 mt-0.5">Publish a new algorithm to the Hub.</p>
           </div>
           <button type="button" onClick={randomizeStats}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-white">
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-white transition-colors">
             <Dices size={14} /> Randomize
           </button>
         </div>
@@ -325,10 +323,10 @@ export default function TradersTab() {
             <label className="text-gray-400 font-bold block mb-2">Trader Photo</label>
             <div className="flex items-center gap-4 mb-3">
               <img src={traderForm.avatar} alt="preview"
-                className="w-16 h-16 rounded-2xl bg-[#0B0E14] border border-white/10 p-1 object-cover" />
+                className="w-16 h-16 rounded-2xl bg-[#0B0E14] border border-white/10 p-1 object-cover"/>
               <div className="flex flex-col gap-2">
                 <button type="button" onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white font-bold">
+                  className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white font-bold transition-colors">
                   <Upload size={14} /> Upload image
                 </button>
                 <span className="text-[10px] text-gray-500">or pick one below</span>
@@ -379,7 +377,7 @@ export default function TradersTab() {
                   <div><span className="text-gray-500">Typical monthly return</span><div className="text-white font-bold">{profile.monthlyReturn[0]}% to {profile.monthlyReturn[1]}%</div></div>
                 </div>
                 <button type="button" onClick={applyTypicalSettings}
-                  className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold rounded-lg mt-1 w-full text-center">
+                  className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold rounded-lg mt-1 w-full text-center transition-colors">
                   Use typical settings for this strategy
                 </button>
               </div>
@@ -409,28 +407,6 @@ export default function TradersTab() {
             </div>
           </div>
 
-          {/* Trade direction */}
-          <div>
-            <label className="text-gray-400 font-bold block mb-1">Trade Direction</label>
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { v: 'LONG', label: 'Long', icon: <TrendingUp size={14} />, on: 'bg-green-500/15 border-green-500 text-green-400' },
-                { v: 'SHORT', label: 'Short', icon: <TrendingDown size={14} />, on: 'bg-red-500/15 border-red-500 text-red-400' },
-                { v: 'RANDOM', label: 'Random', icon: <Dices size={14} />, on: 'bg-blue-500/15 border-blue-500 text-blue-400' },
-              ] as const).map(o => (
-                <button type="button" key={o.v} onClick={() => set({ tradeType: o.v })}
-                  className={`flex items-center justify-center gap-1.5 py-3 rounded-xl border font-bold transition-all ${
-                    traderForm.tradeType === o.v ? o.on : 'bg-[#0B0E14] border-white/10 text-gray-400 hover:border-white/30'
-                  }`}>
-                  {o.icon} {o.label}
-                </button>
-              ))}
-            </div>
-            {traderForm.tradeType === 'RANDOM' && (
-              <p className="text-[10px] text-gray-500 mt-1.5">Long or Short will be picked at random when you publish.</p>
-            )}
-          </div>
-
           <button type="submit" disabled={submitting}
             className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-blue-600/20 mt-2">
             {submitting ? 'Publishing...' : 'Publish Master Trader to Database'}
@@ -450,13 +426,13 @@ export default function TradersTab() {
           </div>
           {hasDuplicates && (
             <button type="button" onClick={requestRemoveDuplicates} disabled={cleaning}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/40 rounded-xl text-xs font-bold text-yellow-300 disabled:opacity-50">
+              className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/40 rounded-xl text-xs font-bold text-yellow-300 disabled:opacity-50 transition-colors">
               {cleaning ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />} Remove duplicates
             </button>
           )}
         </div>
 
-        <div className="mt-5 overflow-y-auto pr-1 flex-1">
+        <div className="mt-5 overflow-y-auto pr-1 flex-1 custom-scrollbar">
           {listLoading ? (
             <div className="flex items-center justify-center py-10 gap-2 text-blue-500">
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -477,9 +453,9 @@ export default function TradersTab() {
                     </div>
                     <div className="text-[10px] text-gray-400 font-bold uppercase truncate">{t.strategy}</div>
                     <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] font-mono">
-                      <span className={`px-1.5 py-0.5 rounded-md font-bold ${
-                        t.tradeType === 'SHORT' ? 'bg-red-500/15 text-red-400' : 'bg-green-500/15 text-green-400'
-                      }`}>{t.tradeType} {t.leverage}x</span>
+                      <span className="px-1.5 py-0.5 rounded-md font-bold bg-blue-500/15 text-blue-400">
+                        {t.leverage}x Lev
+                      </span>
                       <span className="text-gray-400">Win {t.winRate}%</span>
                       <span className="text-gray-400">{t.activeCopies} active cop{t.activeCopies === 1 ? 'y' : 'ies'}</span>
                     </div>
@@ -504,7 +480,7 @@ export default function TradersTab() {
         type={modalConfig.type}
       />
 
-      {/* Confirmation Modal overlay to replace window.confirm */}
+      {/* Confirmation Modal overlay */}
       {confirmConfig.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-[#151924] border border-white/10 rounded-2xl p-6 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200">

@@ -256,7 +256,7 @@ export async function getCompletedTransactionsAdmin() {
       asset: r.asset,
       amount: r.amount,
       status: r.status,
-      destinationAddress: r.destination_address, // <-- NOW FETCHING ADDRESS HERE
+      destinationAddress: r.destination_address,
       network: r.network,
       createdAt: r.created_at ? new Date(r.created_at).toLocaleString() : 'N/A'
     }));
@@ -348,12 +348,10 @@ export async function getProSubscriptionsAdmin() {
 }
 
 // --- MASTER TRADER CREATION ---
-// Requires: ALTER TABLE master_traders ADD COLUMN IF NOT EXISTS avatar TEXT;
 
 export async function createMasterTraderAdmin(data: {
   name: string; strategy: string; winRate: number; totalProfit: number;
-  monthlyReturn: number; activePair?: string;
-  tradeType: 'LONG' | 'SHORT' | 'RANDOM'; leverage: number; avatar?: string;
+  monthlyReturn: number; leverage: number; avatar?: string;
 }) {
   const role = await getUserRole();
   if (role !== 'admin') return { success: false, message: 'Forbidden: admin access required.' };
@@ -375,12 +373,6 @@ export async function createMasterTraderAdmin(data: {
       return { success: false, message: `A trader named "${name}" already exists.` };
     }
 
-    let tradeType = String(data.tradeType || '').toUpperCase();
-    if (tradeType === 'RANDOM') tradeType = Math.random() < 0.5 ? 'LONG' : 'SHORT';
-    if (tradeType !== 'LONG' && tradeType !== 'SHORT') {
-      return { success: false, message: 'Trade type must be LONG, SHORT or RANDOM.' };
-    }
-
     let avatar = (data.avatar || '').trim();
     const avatarOk =
       avatar.startsWith('https://') ||
@@ -389,14 +381,16 @@ export async function createMasterTraderAdmin(data: {
       avatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`;
     }
 
+    // We pass 'AUTO' for active_pair and trade_type to satisfy the database's NOT NULL requirements
+    // even though we no longer use these fields in the UI.
     await pool.query(
       `INSERT INTO master_traders
-        (name, strategy, win_rate, total_profit, monthly_return, active_pair, trade_type, leverage, avatar)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [name, data.strategy, data.winRate, data.totalProfit, data.monthlyReturn,
-       (data.activePair || '').trim() || 'N/A', tradeType, Math.round(data.leverage), avatar]
+        (name, strategy, win_rate, total_profit, monthly_return, leverage, avatar, active_pair, trade_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, 'AUTO', 'AUTO')`,
+      [name, data.strategy, data.winRate, data.totalProfit, data.monthlyReturn, Math.round(data.leverage), avatar]
     );
-    return { success: true, message: `Master Trader "${name}" published as ${tradeType}!` };
+    
+    return { success: true, message: `Master Trader "${name}" published!` };
   } catch (error) {
     console.error('Error creating master trader:', error);
     return { success: false, message: 'Failed to create Master Trader.' };
@@ -411,13 +405,10 @@ export interface AdminTrader {
   winRate: number;
   monthlyReturn: number;
   totalProfit: number;
-  activePair: string;
-  tradeType: string;
   leverage: number;
   activeCopies: number;
 }
 
-// All published master traders (newest first) with how many active copies each has
 export async function getMasterTradersAdmin(): Promise<AdminTrader[]> {
   const role = await getUserRole();
   if (role !== 'admin') return [];
@@ -425,7 +416,7 @@ export async function getMasterTradersAdmin(): Promise<AdminTrader[]> {
   try {
     const { rows } = await pool.query(
       `SELECT t.id, t.name, t.strategy, t.win_rate, t.monthly_return, t.total_profit,
-              t.active_pair, t.trade_type, t.leverage, t.avatar,
+              t.leverage, t.avatar,
               (SELECT COUNT(*) FROM active_copies c WHERE c.trader_id = t.id) AS copies
        FROM master_traders t
        ORDER BY t.id DESC`
@@ -438,8 +429,6 @@ export async function getMasterTradersAdmin(): Promise<AdminTrader[]> {
       winRate: parseFloat(r.win_rate),
       monthlyReturn: parseFloat(r.monthly_return),
       totalProfit: parseFloat(r.total_profit),
-      activePair: r.active_pair,
-      tradeType: r.trade_type,
       leverage: Number(r.leverage) || 1,
       activeCopies: parseInt(r.copies, 10) || 0,
     }));
